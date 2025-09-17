@@ -970,8 +970,6 @@ publishing {
             artifactId = 'printlib'
             version = project.version
             
-            artifact jar
-            
             pom {
                 name = 'printlib'
                 description = 'printlib library for direct printing'
@@ -995,7 +993,7 @@ publishing {
                 scm {
                     connection = 'scm:git:git://github.com/printlib/printlib.git'
                     developerConnection = 'scm:git:ssh://github.com:printlib/printlib.git'
-                    url = 'https://github.com/printlib/printlib/tree/master'
+                    url = 'https://github.com/printlib/printlib/tree/main'
                 }
             }
         }
