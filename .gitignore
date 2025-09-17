@@ -1,0 +1,35 @@
+/out/
+/js/node_modules
+/lib/javafx*
+/.idea/workspace.xml
+/.idea/misc.xml
+/.idea/uiDesigner.xml
+/.idea/compiler.xml
+/fx.zip
+/provision.json
+.DS_Store
+windows-debug-launcher.nsi.in
+*.exe
+*.dll
+!installer/windows/nsis/Plugins/Release_Unicode/StdUtils.dll
+!installer/windows/nsis/Plugins/Release_ANSI/StdUtils.dll
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tgz
+*.bz2
+*.gz
+*.7z
+*.rar
+*.bin
+*.log
+*.tmp
+*.class
+#gradle files
+.gradle/
+/build/
+#idea files
+.idea/
+/bin/

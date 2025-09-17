@@ -1,0 +1,1080 @@
+plugins {
+    id 'java'
+    id 'maven-publish'
+    id "io.freefair.lombok" version '8.13.1'
+}
+
+// Enable parallel execution and optimize worker count
+gradle.startParameter.maxWorkerCount = Math.max(4, Runtime.runtime.availableProcessors() - 1)
+gradle.startParameter.parallelProjectExecutionEnabled = true
+
+// Configure Lombok for reasonable performance
+lombok {
+    version = "1.18.30"
+    disableConfig = false
+}
+
+// Configure delombok task for reasonable performance
+tasks.withType(io.freefair.gradle.plugins.lombok.tasks.Delombok) {
+    outputs.cacheIf { true }
+    inputs.files(sourceSets.main.java.srcDirs)
+    inputs.property('lombokVersion', lombok.version)
+}
+
+// Source and resource directories
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java']
+        }
+        resources {
+            srcDirs = ['src/main/resources']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['src/test/java']
+        }
+        resources {
+            srcDirs = ['src/test/resources']
+        }
+    }
+}
+
+repositories {
+    mavenLocal()
+    maven {
+        url = uri('https://repo.maven.apache.org/maven2/')
+    }
+    maven {
+        url = uri('https://jitpack.io')
+    }
+}
+// Optimized dependency resolution
+configurations.all {
+    // Reasonable caching for changing modules
+    resolutionStrategy.cacheChangingModulesFor 10, 'minutes'
+    resolutionStrategy.cacheDynamicVersionsFor 10, 'minutes'
+    
+    // Force BouncyCastle version to fix security vulnerabilities
+    resolutionStrategy.force(
+        'org.bouncycastle:bcprov-jdk18on:1.81',
+        'org.bouncycastle:bcpkix-jdk18on:1.81',
+        'org.bouncycastle:bcprov-ext-jdk18on:1.81',
+        'org.bouncycastle:bcutil-jdk18on:1.81'
+    )
+    
+    // Force all BouncyCastle artifacts to use the secure version
+    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+        if (details.requested.group == 'org.bouncycastle') {
+            if (details.requested.name.startsWith('bcprov-jdk15on') ||
+                details.requested.name.startsWith('bcpkix-jdk15on')) {
+                // Replace old JDK15 versions with JDK18 equivalents
+                details.useTarget group: 'org.bouncycastle', name: details.requested.name.replace('jdk15on', 'jdk18on'), version: '1.81'
+            } else if (details.requested.name.startsWith('bcprov-ext-jdk15on')) {
+                // bcprov-ext-jdk18on doesn't exist, use bcprov-jdk18on instead
+                details.useTarget group: 'org.bouncycastle', name: 'bcprov-jdk18on', version: '1.81'
+            } else {
+                // Force version 1.81 for all other BouncyCastle artifacts
+                details.useVersion '1.81'
+            }
+        }
+    }
+    
+    // Exclude problematic transitive dependencies
+    exclude group: 'commons-logging', module: 'commons-logging'
+    exclude group: 'log4j', module: 'log4j'
+    exclude group: 'org.slf4j', module: 'slf4j-log4j12'
+}
+
+
+// Define a configuration for system dependencies
+configurations {
+    systemLibs
+    // Make sure system dependencies are included in the runtime classpath
+    implementation.extendsFrom(systemLibs)
+    // Configuration for JavaFX SDK
+    javafxSdk
+}
+
+// Enable downloading sources and javadocs for all dependencies
+java {
+    withSourcesJar()
+    withJavadocJar()
+
+    //source compatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+    // Set the source and target compatibility to Java 21
+    sourceCompatibility = JavaVersion.VERSION_21
+}
+
+// Configure duplicatesStrategy for sourcesJar task
+tasks.named('sourcesJar') {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// Add a task to download sources and javadocs
+task downloadSources {
+    description = 'Download sources and javadocs for all dependencies'
+    group = 'documentation'
+    
+    doLast {
+        // Force download of sources and javadocs
+        configurations.implementation.canBeResolved = true
+        configurations.implementation.resolve().each { file ->
+            println "Resolved: ${file}"
+        }
+        
+        // Try to download sources and javadocs for each dependency
+        configurations.implementation.dependencies.each { dep ->
+            if (dep.group != null && !dep.group.startsWith('local.')) {
+                println "Downloading sources and javadocs for ${dep.group}:${dep.name}:${dep.version}"
+                
+                // Create source and javadoc configurations
+                def sourceConfig = project.configurations.detachedConfiguration(
+                    project.dependencies.create("${dep.group}:${dep.name}:${dep.version}:sources")
+                )
+                def javadocConfig = project.configurations.detachedConfiguration(
+                    project.dependencies.create("${dep.group}:${dep.name}:${dep.version}:javadoc")
+                )
+                
+                // Try to resolve sources
+                try {
+                    sourceConfig.resolve()
+                    println "  Sources downloaded successfully"
+                } catch (Exception e) {
+                    println "  Sources not available: ${e.message}"
+                }
+                
+                // Try to resolve javadocs
+                try {
+                    javadocConfig.resolve()
+                    println "  Javadocs downloaded successfully"
+                } catch (Exception e) {
+                    println "  Javadocs not available: ${e.message}"
+                }
+            }
+        }
+    }
+}
+
+
+// Define JavaFX version and paths (platform-agnostic)
+ext {
+    javafxVersion = '21'
+    javafxMirror = 'https://download2.gluonhq.com/openjfx'
+    javafxUrlVersion = '21.0.6'
+    
+    // Platform-specific JavaFX configuration is now defined in respective installer files:
+    // - Windows: javafxOs = 'windows', javafxArch = 'x64' in windows-installer.gradle
+    // - Linux: javafxOs = 'linux', javafxArch = 'x64' in linux-installer.gradle
+    
+    // Default to current platform for JavaFX SDK download
+    def osName = System.getProperty('os.name').toLowerCase()
+    def defaultOs = osName.contains('windows') ? 'windows' :
+                   osName.contains('linux') ? 'linux' : 'windows'
+    def defaultArch = System.getProperty('os.arch').contains('aarch64') ? 'arm64' : 'x64'
+    
+    javafxOs = project.hasProperty('javafxOs') ? project.javafxOs : defaultOs
+    javafxArch = project.hasProperty('javafxArch') ? project.javafxArch : defaultArch
+    javafxDir = "${projectDir}/out/javafx-${javafxOs}-${javafxArch}-${javafxUrlVersion}"
+    javafxSdkDir = "${javafxDir}/javafx-sdk-${javafxVersion}"
+    javafxZipFile = "${projectDir}/out/javafx-${javafxOs}-${javafxArch}-${javafxUrlVersion}.zip"
+    
+    // Add module names for JavaFX modules
+    javafxModules = [
+        "javafx.base",
+        "javafx.controls",
+        "javafx.fxml",
+        "javafx.graphics",
+        "javafx.swing",
+        "javafx.web"
+    ]
+}
+
+test {
+    useJUnitPlatform()
+    systemProperty 'java.awt.headless', 'true'
+}
+
+// Task to download JavaFX SDK and its checksum
+task downloadJavaFX {
+    description = 'Downloads JavaFX SDK and installs it to Maven local repository'
+    group = 'build'
+    
+    // Store all properties as local variables to avoid accessing project.ext during execution
+    def javafxMirrorProp = javafxMirror
+    def javafxUrlVersionProp = javafxUrlVersion
+    def javafxOsProp = javafxOs
+    def javafxArchProp = javafxArch
+    def javafxDirProp = javafxDir
+    def javafxZipFileProp = javafxZipFile
+    def projectDirProp = projectDir.toString()
+    def javafxChecksumFile = "${javafxZipFileProp}.sha256"
+    
+    // Define Maven coordinates for the JavaFX SDK
+    def groupId = "org.openjfx"
+    def artifactId = "javafx-sdk"
+    def version = javafxUrlVersionProp
+    def classifier = "${javafxOsProp}-${javafxArchProp}"
+    def packaging = "zip"
+    
+    // Define the path in the local Maven repository
+    def m2BasePath = "${System.getProperty('user.home')}/.m2/repository"
+    def m2Path = "${m2BasePath}/${groupId.replace('.', '/')}/${artifactId}/${version}"
+    def m2File = "${m2Path}/${artifactId}-${version}-${classifier}.${packaging}"
+    def m2ChecksumFile = "${m2File}.sha256"
+    
+    // Set inputs and outputs for better up-to-date checking and caching
+    inputs.property('javafxVersion', javafxUrlVersionProp)
+    inputs.property('javafxOs', javafxOsProp)
+    inputs.property('javafxArch', javafxArchProp)
+    inputs.property('javafxMirror', javafxMirrorProp)
+    
+    outputs.dir javafxDirProp
+    outputs.file(m2File)
+    outputs.file(m2ChecksumFile)
+    outputs.cacheIf { true }
+    
+    // Enhanced up-to-date check with offline mode support
+    onlyIf {
+        def zipFile = file(javafxZipFileProp)
+        def extractedDir = file(javafxDirProp)
+        def m2ZipFile = file(m2File)
+        def m2ChecksumFileObj = file(m2ChecksumFile)
+        
+        // Check if we're in offline mode
+        def isOfflineMode = gradle.startParameter.isOffline()
+        
+        // If in offline mode and Maven repository has JavaFX, skip download
+        if (isOfflineMode && m2ZipFile.exists()) {
+            logger.lifecycle("Offline mode: Using existing JavaFX from Maven repository: ${m2ZipFile}")
+            return false
+        }
+        
+        // Skip if all outputs exist and are valid
+        !(zipFile.exists() && extractedDir.exists() && m2ZipFile.exists() && m2ChecksumFileObj.exists())
+    }
+    
+    doLast {
+        def javafxUrl = "${javafxMirrorProp}/${javafxUrlVersionProp}/openjfx-${javafxUrlVersionProp}_${javafxOsProp}-${javafxArchProp}_bin-sdk.zip"
+        def checksumUrl = "${javafxUrl}.sha256"
+        
+        logger.lifecycle("Downloading JavaFX from ${javafxUrl}")
+        logger.lifecycle("Downloading checksum from ${checksumUrl}")
+        
+        // Create output directory if it doesn't exist
+        mkdir(projectDirProp + "/out")
+        
+        // Download the JavaFX SDK
+        ant.get(src: javafxUrl, dest: javafxZipFileProp, verbose: true, usetimestamp: true)
+        
+        // Download the checksum file
+        ant.get(src: checksumUrl, dest: javafxChecksumFile, verbose: true, usetimestamp: true)
+        
+        // Verify the checksum
+        def checksumFileContent = new File(javafxChecksumFile).text.trim()
+        // Extract just the checksum part (first part before any space)
+        def expectedChecksum = checksumFileContent.split("\\s+")[0].trim()
+        
+        def fileInputStream = new FileInputStream(new File(javafxZipFileProp))
+        def digest = java.security.MessageDigest.getInstance("SHA-256")
+        byte[] buffer = new byte[8192]
+        int read = 0
+        while ((read = fileInputStream.read(buffer)) > 0) {
+            digest.update(buffer, 0, read)
+        }
+        fileInputStream.close()
+        def actualChecksum = digest.digest().collect { String.format("%02x", it) }.join('')
+        
+        // Verify checksums are valid and match
+        if (expectedChecksum == null || expectedChecksum.isEmpty()) {
+            logger.error("Expected checksum is missing or empty")
+            throw new Exception("Expected checksum is missing or empty. Cannot verify JavaFX SDK integrity.")
+        }
+        
+        if (actualChecksum == null || actualChecksum.isEmpty()) {
+            logger.error("Actual checksum calculation failed")
+            throw new Exception("Actual checksum calculation failed. Cannot verify JavaFX SDK integrity.")
+        }
+        
+        // Compare checksums
+        if (!expectedChecksum.equals(actualChecksum)) {
+            // Log detailed information about the failure
+            logger.error("Checksum verification failed for JavaFX SDK")
+            logger.error("File: ${javafxZipFileProp}")
+            logger.error("Expected SHA-256: ${expectedChecksum}")
+            logger.error("Actual SHA-256: ${actualChecksum}")
+            logger.error("This could indicate a corrupted download, network error, or tampered file")
+            
+            // Throw exception with clear error message
+            throw new Exception("JavaFX SDK integrity check failed! Expected: ${expectedChecksum}, Actual: ${actualChecksum}. Try deleting ${javafxZipFileProp} and running the task again.")
+        }
+        
+        logger.lifecycle("Checksum verification successful")
+        
+        // Create the JavaFX directory if it doesn't exist
+        mkdir(javafxDirProp)
+        
+        // Extract the ZIP file
+        ant.unzip(src: javafxZipFileProp, dest: javafxDirProp, overwrite: true)
+        
+        // Install the ZIP file and checksum to the local Maven repository
+        mkdir(m2Path)
+        
+        // Copy the ZIP file to the Maven repository
+        copy {
+            from javafxZipFileProp
+            into m2Path
+            rename { "${artifactId}-${version}-${classifier}.${packaging}" }
+        }
+        
+        // Copy the checksum file to the Maven repository
+        copy {
+            from javafxChecksumFile
+            into m2Path
+            rename { "${artifactId}-${version}-${classifier}.${packaging}.sha256" }
+        }
+        
+        // Generate Maven metadata files
+        def pomContent = """<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>${groupId}</groupId>
+  <artifactId>${artifactId}</artifactId>
+  <version>${version}</version>
+  <packaging>${packaging}</packaging>
+  <classifier>${classifier}</classifier>
+  <description>JavaFX SDK</description>
+</project>
+"""
+        
+        def pomFile = new File("${m2Path}/${artifactId}-${version}-${classifier}.pom")
+        pomFile.text = pomContent
+        
+        logger.lifecycle("JavaFX SDK installed to Maven local repository at ${m2File}")
+        logger.lifecycle("JavaFX SDK extracted to ${javafxDirProp}")
+    }
+}
+
+// Task to check if JavaFX SDK is already in Maven repository
+task checkJavaFXInMavenRepo {
+    description = 'Checks if JavaFX SDK is already in Maven local repository'
+    group = 'build'
+    
+    // Define Maven coordinates for the JavaFX SDK
+    def groupId = "org.openjfx"
+    def artifactId = "javafx-sdk"
+    def version = javafxUrlVersion
+    def classifier = "${javafxOs}-${javafxArch}"
+    def packaging = "zip"
+    
+    // Define the path in the local Maven repository
+    def m2BasePath = "${System.getProperty('user.home')}/.m2/repository"
+    def m2Path = "${m2BasePath}/${groupId.replace('.', '/')}/${artifactId}/${version}"
+    def m2File = "${m2Path}/${artifactId}-${version}-${classifier}.${packaging}"
+    def m2ChecksumFile = "${m2File}.sha256"
+    
+    // Set outputs for up-to-date checking
+    outputs.upToDateWhen {
+        def zipFile = new File(m2File)
+        def checksumFile = new File(m2ChecksumFile)
+        return zipFile.exists() && checksumFile.exists()
+    }
+}
+
+// Make downloadJavaFX depend on checkJavaFXInMavenRepo
+downloadJavaFX.dependsOn checkJavaFXInMavenRepo
+
+dependencies {
+    // Core dependencies - use implementation instead of api for better encapsulation
+    implementation 'net.java.dev.jna:jna:5.13.0'
+    implementation 'net.java.dev.jna:jna-platform:5.13.0'
+    implementation 'commons-io:commons-io:2.15.1'
+    implementation 'org.apache.commons:commons-lang3:3.14.0'
+    implementation 'commons-codec:commons-codec:1.16.0'
+    implementation 'org.apache.commons:commons-pool2:2.12.0'
+    implementation 'org.apache.logging.log4j:log4j-api:2.22.1'
+    implementation 'org.apache.logging.log4j:log4j-core:2.22.1'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.81'
+    implementation 'org.bouncycastle:bcpkix-jdk18on:1.81'
+    implementation 'org.bouncycastle:bcutil-jdk18on:1.81'
+    // Core dependencies - same artifact names
+    implementation 'org.eclipse.jetty:jetty-server:12.0.22'
+    implementation 'org.eclipse.jetty:jetty-client:12.0.22'
+    implementation 'org.eclipse.jetty:jetty-security:12.0.22'
+
+    // EE09 Servlet dependencies
+    implementation 'org.eclipse.jetty.ee9:jetty-ee9-servlet:12.0.22'
+    implementation 'org.eclipse.jetty.ee9:jetty-ee9-servlets:12.0.22'  // For DefaultServlet
+
+    // WebSocket dependencies - using EE9 implementation for annotation compatibility
+    implementation 'org.eclipse.jetty.ee9.websocket:jetty-ee9-websocket-jetty-server:12.0.22'
+    implementation 'org.eclipse.jetty.ee9.websocket:jetty-ee9-websocket-jetty-client:12.0.22'
+    implementation 'org.eclipse.jetty.ee9.websocket:jetty-ee9-websocket-jetty-api:12.0.22'    // For annotations
+    implementation 'org.eclipse.jetty.ee9.websocket:jetty-ee9-websocket-jetty-common:12.0.22' // For common classes
+    implementation 'org.eclipse.jetty.ee9.websocket:jetty-ee9-websocket-servlet:12.0.22'     // For servlet support
+    implementation 'org.codehaus.jettison:jettison:1.5.4'
+    implementation 'com.github.zafarkhaja:java-semver:0.9.0'
+    implementation 'org.apache.pdfbox:pdfbox:2.0.29'
+    implementation 'org.apache.pdfbox:pdfbox-app:2.0.29'
+
+
+
+    
+    // Platform-specific JavaFX dependencies are now defined in their respective installer files:
+    // - Windows JavaFX dependencies: windows-installer.gradle
+    // - Linux JavaFX dependencies: linux-installer.gradle
+    
+        
+
+    implementation 'com.google.code.gson:gson:2.10.1'
+    // https://mvnrepository.com/artifact/org.json/json
+    implementation 'org.json:json:20250107'
+    // System dependencies
+    
+    // JsonNullable dependency for OpenAPI generated models
+    implementation 'org.openapitools:jackson-databind-nullable:0.2.6'
+    
+    // Additional dependencies needed based on error messages
+    // Using javax.servlet API instead of jakarta.servlet
+    implementation 'javax.servlet:javax.servlet-api:4.0.1'
+    implementation 'com.ibm.icu:icu4j:72.1'
+    implementation 'com.ibm.icu:icu4j-charset:72.1'
+    
+    // Missing dependencies that were removed
+    implementation 'io.gsonfire:gson-fire:1.8.5'
+    // implementation 'org.apache.commons:commons-ssl:1.0.0.b3'  // Replaced with commons-codec
+    implementation 'com.github.vatbub:mslinks:1.0.6'
+    
+    // Fix for javax.annotation compatibility with Java 21
+    // Use the same dependency that is compatible with Java 21
+    implementation 'javax.annotation:javax.annotation-api:1.3.2'
+    
+    // Alternative Jakarta annotations for better compatibility
+    implementation 'jakarta.annotation:jakarta.annotation-api:2.1.1'
+    implementation 'jakarta.inject:jakarta.inject-api:2.0.1'
+    annotationProcessor 'jakarta.inject:jakarta.inject-api:2.0.1'
+    // SpotBugs annotations as fallback (contains javax.annotation compatible classes)
+    implementation 'com.github.spotbugs:spotbugs-annotations:4.8.3'
+    
+    
+    // Add JavaFX SDK as a dependency
+    javafxSdk "org.openjfx:javafx-sdk:${javafxUrlVersion}:${javafxOs}-${javafxArch}@zip"
+}
+
+group = 'com.github.printlib'
+
+def getGitTagVersion() {
+    try {
+        // Get the current commit's tags
+        def tagResult = 'git tag --points-at HEAD'.execute()
+        tagResult.waitFor()
+        
+        if (tagResult.exitValue() != 0) {
+            println "Warning: Failed to get git tags for current commit"
+            return null
+        }
+        
+        def tags = tagResult.text.trim().split('\n').findAll { it.trim() }
+        
+        if (tags.isEmpty()) {
+            // No tags on current commit, try to get the latest tag
+            def latestTagResult = 'git describe --tags --abbrev=0'.execute()
+            latestTagResult.waitFor()
+            
+            if (latestTagResult.exitValue() != 0) {
+                println "Info: No git tags found in repository"
+                return null
+            }
+            
+            def latestTag = latestTagResult.text.trim()
+            if (latestTag) {
+                // Check if we're exactly on this tag
+                def tagCommitResult = "git rev-list -n 1 ${latestTag}".execute()
+                tagCommitResult.waitFor()
+                def currentCommitResult = 'git rev-parse HEAD'.execute()
+                currentCommitResult.waitFor()
+                
+                if (tagCommitResult.exitValue() == 0 && currentCommitResult.exitValue() == 0) {
+                    def tagCommit = tagCommitResult.text.trim()
+                    def currentCommit = currentCommitResult.text.trim()
+                    
+                    if (tagCommit != currentCommit) {
+                        println "Info: Current commit is not tagged (latest tag: ${latestTag})"
+                        return null
+                    }
+                    tags = [latestTag]
+                } else {
+                    return null
+                }
+            } else {
+                return null
+            }
+        }
+        
+        // Find the first valid semantic version tag
+        for (String tag : tags) {
+            def versionInfo = parseSemanticVersion(tag)
+            if (versionInfo != null) {
+                println "Found valid git tag: ${tag} -> version: ${versionInfo.version}"
+                return versionInfo
+            }
+        }
+        
+        println "Info: No valid semantic version tags found"
+        return null
+        
+    } catch (Exception e) {
+        println "Warning: Error detecting git tag version: ${e.message}"
+        return null
+    }
+}
+
+/**
+ * Parses a semantic version tag and extracts version components.
+ * Supports formats: v1.2.3, v1.2.3-beta.1, v1.2.3-alpha.1, v1.2.3-rc.1, etc.
+ *
+ * @param tag The git tag to parse
+ * @return A map with version information or null if invalid
+ */
+def parseSemanticVersion(String tag) {
+    if (!tag) {
+        return null
+    }
+    
+    try {
+        // Remove 'v' prefix if present
+        def versionString = tag.startsWith('v') ? tag.substring(1) : tag
+        
+        // Regex pattern for semantic versioning with optional pre-release
+        // Matches: 1.2.3, 1.2.3-beta.1, 1.2.3-alpha.1, 1.2.3-rc.1, etc.
+        def pattern = /^(\d+)\.(\d+)\.(\d+)(?:-([a-zA-Z]+)(?:\.(\d+))?)?$/
+        def matcher = versionString =~ pattern
+        
+        if (!matcher.matches()) {
+            return null
+        }
+        
+        def major = matcher.group(1)
+        def minor = matcher.group(2)
+        def patch = matcher.group(3)
+        def preReleaseType = matcher.group(4)
+        def preReleaseNumber = matcher.group(5)
+        
+        // Validate semantic version format
+        if (!isValidSemanticVersion(major, minor, patch)) {
+            return null
+        }
+        
+        def version = "${major}.${minor}.${patch}"
+        def isPreRelease = preReleaseType != null
+        
+        // Add pre-release suffix if present
+        if (isPreRelease) {
+            version += "-${preReleaseType}"
+            if (preReleaseNumber) {
+                version += ".${preReleaseNumber}"
+            }
+        }
+        
+        return [
+            version: version,
+            major: major,
+            minor: minor,
+            patch: patch,
+            isPreRelease: isPreRelease,
+            preReleaseType: preReleaseType,
+            preReleaseNumber: preReleaseNumber,
+            originalTag: tag
+        ]
+        
+    } catch (Exception e) {
+        println "Warning: Error parsing semantic version from tag '${tag}': ${e.message}"
+        return null
+    }
+}
+
+/**
+ * Validates semantic version components.
+ *
+ * @param major Major version number
+ * @param minor Minor version number
+ * @param patch Patch version number
+ * @return true if valid, false otherwise
+ */
+def isValidSemanticVersion(String major, String minor, String patch) {
+    try {
+        def majorInt = Integer.parseInt(major)
+        def minorInt = Integer.parseInt(minor)
+        def patchInt = Integer.parseInt(patch)
+        
+        // All components must be non-negative
+        return majorInt >= 0 && minorInt >= 0 && patchInt >= 0
+    } catch (NumberFormatException e) {
+        return false
+    }
+}
+
+/**
+ * Generates a version string based on the current date and time.
+ * Format: 1.YYYY.MM.DD.HHMM
+ * This is used as fallback when no git tags are found.
+ *
+ * @return A version string in the format 1.YYYY.MM.DD.HHMM
+ */
+def generateVersionFromDate() {
+    def now = new Date()
+    def yearFormatter = new java.text.SimpleDateFormat("yyyy")
+    def monthFormatter = new java.text.SimpleDateFormat("MM")
+    def dayFormatter = new java.text.SimpleDateFormat("dd")
+    def timeFormatter = new java.text.SimpleDateFormat("HHmm")
+    
+    def year = yearFormatter.format(now)
+    def month = monthFormatter.format(now)
+    def day = dayFormatter.format(now)
+    def time = timeFormatter.format(now)
+    
+    return "1.${year}.${month}.${day}.${time}"
+}
+
+/**
+ * Determines the project version using git tags with fallback to date-time versioning.
+ * Priority:
+ * 1. Git tag semantic version (v1.2.3 -> 1.2.3)
+ * 2. Date-time based version (1.YYYY.MM.DD.HHMM)
+ *
+ * @return The determined version string
+ */
+def determineProjectVersion() {
+    try {
+        // First, try to get version from git tags
+        def gitVersionInfo = getGitTagVersion()
+        
+        if (gitVersionInfo != null) {
+            println "Using git tag version: ${gitVersionInfo.version} (from tag: ${gitVersionInfo.originalTag})"
+            return gitVersionInfo.version
+        }
+        
+        // Fallback to date-time based versioning
+        def dateVersion = generateVersionFromDate()
+        println "Using date-time version: ${dateVersion} (no git tags found)"
+        return dateVersion
+        
+    } catch (Exception e) {
+        println "Error determining project version: ${e.message}"
+        println "Falling back to date-time versioning"
+        return generateVersionFromDate()
+    }
+}
+
+// Define version caching properties at project level
+ext {
+    // Create a file to store the cached version for the run task
+    cachedVersionFile = file("${buildDir}/tmp/cachedVersion.txt")
+    
+    // Determine if we should use the cached version (for run task) or generate a new one
+    isRunTask = gradle.startParameter.taskNames.any { it == 'run' || it.endsWith(':run') }
+}
+
+// Function to get or create the cached version
+def getCachedVersion() {
+    if (!project.ext.cachedVersionFile.exists()) {
+        project.ext.cachedVersionFile.parentFile.mkdirs()
+        project.ext.cachedVersionFile.text = determineProjectVersion()
+    }
+    return project.ext.cachedVersionFile.text
+}
+
+// Set the version with the appropriate format
+// For run tasks, use cached version to maintain consistency during development
+// For other tasks, determine version fresh (git tag or date-time)
+version = project.ext.isRunTask ? getCachedVersion() : determineProjectVersion()
+description = 'U Print'
+
+// Task to display the current version for testing
+task printVersion {
+    description = 'Prints the current project version and versioning strategy'
+    group = 'help'
+    
+    doLast {
+        println "Current version: ${project.version}"
+        
+        // Determine version source
+        def gitVersionInfo = getGitTagVersion()
+        if (gitVersionInfo != null) {
+            println "Version source: Git tag '${gitVersionInfo.originalTag}'"
+            println "Semantic version: ${gitVersionInfo.version}"
+            if (gitVersionInfo.isPreRelease) {
+                println "Pre-release: ${gitVersionInfo.preReleaseType}" +
+                       (gitVersionInfo.preReleaseNumber ? ".${gitVersionInfo.preReleaseNumber}" : "")
+            }
+            println "Version components: ${gitVersionInfo.major}.${gitVersionInfo.minor}.${gitVersionInfo.patch}"
+        } else {
+            println "Version source: Date-time fallback (no git tags found)"
+            println "Pattern: 1.<yyyy>.<mm>.<dd>.hhmm"
+            println "Where yyyy=year, mm=month, dd=day, hhmm=hour and minute when the build is run"
+        }
+        
+        // Show versioning strategy
+        println "\nVersioning Strategy:"
+        println "1. Git tag detection (v1.2.3 → 1.2.3) - PRIORITY"
+        println "2. Date-time fallback (1.YYYY.MM.DD.HHMM) - FALLBACK"
+        println "Supports pre-release tags: v1.2.3-beta.1, v1.2.3-alpha.1, v1.2.3-rc.1"
+        
+        // Show caching status
+        println "\nVersion Caching:"
+        if (project.ext.isRunTask) {
+            println "Status: ENABLED (using cached version for 'run' task)"
+            if (project.ext.cachedVersionFile.exists()) {
+                println "Cached version file: ${project.ext.cachedVersionFile.absolutePath}"
+                println "Cached version: ${project.ext.cachedVersionFile.text.trim()}"
+            } else {
+                println "No cached version file exists yet. It will be created when you run the 'run' task."
+            }
+        } else {
+            println "Status: DISABLED (determining fresh version for non-run tasks)"
+            println "A new version will be determined for this build using git tags or date-time."
+        }
+    }
+}
+
+// Task to clear the cached version
+task clearCachedVersion {
+    description = 'Clears the cached version used by the run task'
+    group = 'help'
+    
+    doLast {
+        if (project.ext.cachedVersionFile.exists()) {
+            project.ext.cachedVersionFile.delete()
+            println "Cached version file deleted: ${project.ext.cachedVersionFile.absolutePath}"
+            println "A new version will be determined next time you run the 'run' task using git tags or date-time."
+        } else {
+            println "No cached version file exists at: ${project.ext.cachedVersionFile.absolutePath}"
+        }
+    }
+}
+
+// Task to test git tag version detection
+task testGitVersioning {
+    description = 'Tests git tag version detection and displays results'
+    group = 'help'
+    
+    doLast {
+        println "=== GIT TAG VERSION DETECTION TEST ==="
+        
+        // Test git tag detection
+        def gitVersionInfo = getGitTagVersion()
+        
+        if (gitVersionInfo != null) {
+            println "✓ Git tag detected successfully!"
+            println "  Original tag: ${gitVersionInfo.originalTag}"
+            println "  Parsed version: ${gitVersionInfo.version}"
+            println "  Major: ${gitVersionInfo.major}"
+            println "  Minor: ${gitVersionInfo.minor}"
+            println "  Patch: ${gitVersionInfo.patch}"
+            println "  Is pre-release: ${gitVersionInfo.isPreRelease}"
+            if (gitVersionInfo.isPreRelease) {
+                println "  Pre-release type: ${gitVersionInfo.preReleaseType}"
+                if (gitVersionInfo.preReleaseNumber) {
+                    println "  Pre-release number: ${gitVersionInfo.preReleaseNumber}"
+                }
+            }
+        } else {
+            println "ℹ No git tags found or current commit is not tagged"
+            println "  Will use date-time fallback versioning"
+        }
+        
+        // Test version determination
+        println "\n=== VERSION DETERMINATION TEST ==="
+        def determinedVersion = determineProjectVersion()
+        println "Determined version: ${determinedVersion}"
+        
+        // Test semantic version parsing with examples
+        println "\n=== SEMANTIC VERSION PARSING TEST ==="
+        def testTags = ['v1.0.0', 'v2.1.3', 'v1.0.0-beta.1', 'v2.0.0-alpha.1', 'v1.5.0-rc.2', 'invalid-tag', '1.0.0']
+        testTags.each { tag ->
+            def parsed = parseSemanticVersion(tag)
+            if (parsed != null) {
+                println "✓ '${tag}' → ${parsed.version} (valid)"
+            } else {
+                println "✗ '${tag}' → invalid"
+            }
+        }
+        
+        println "\n=== TEST COMPLETED ==="
+    }
+}
+
+// Task to test version caching with run task
+task testVersionCaching {
+    description = 'Tests version caching with run task'
+    group = 'help'
+    
+    doLast {
+        println "Testing version caching with run task"
+        println "Current version: ${project.version}"
+        println "Is run task: ${project.ext.isRunTask}"
+        
+        if (project.ext.cachedVersionFile.exists()) {
+            println "Cached version file exists: ${project.ext.cachedVersionFile.absolutePath}"
+            println "Cached version: ${project.ext.cachedVersionFile.text}"
+        } else {
+            println "No cached version file exists yet"
+        }
+    }
+}
+
+// Task to simulate the run task for testing
+task testRunVersionCaching {
+    description = 'Tests version caching by simulating the run task'
+    group = 'help'
+    
+    doFirst {
+        // Temporarily override the isRunTask property
+        project.ext.originalIsRunTask = project.ext.isRunTask
+        project.ext.isRunTask = true
+        
+        println "Simulating run task (isRunTask = true)"
+        println "Current version before update: ${project.version}"
+    }
+    
+    doLast {
+        // Force creation of the cached version file
+        if (!project.ext.cachedVersionFile.exists()) {
+            project.ext.cachedVersionFile.parentFile.mkdirs()
+            project.ext.cachedVersionFile.text = generateVersionFromDate()
+            println "Created new cached version file with version: ${project.ext.cachedVersionFile.text}"
+        }
+        
+        println "Current version after update: ${project.version}"
+        
+        if (project.ext.cachedVersionFile.exists()) {
+            println "Cached version file exists: ${project.ext.cachedVersionFile.absolutePath}"
+            println "Cached version: ${project.ext.cachedVersionFile.text}"
+        } else {
+            println "No cached version file exists yet"
+        }
+        
+        // Restore the original isRunTask property
+        project.ext.isRunTask = project.ext.originalIsRunTask
+        println "Restored original isRunTask = ${project.ext.isRunTask}"
+    }
+}
+
+// Create a task to update version files in the source directory
+// This ensures the version files are included in the JAR
+task updateVersionFiles {
+    description = 'Updates version files in the source directory with git tag or date-time version'
+    group = 'build'
+    
+    doLast {
+        // Determine the version to use based on current context
+        def versionToUse
+        
+        // If the cached version file exists and not executing platform distribution tasks, use the cached version
+        if (project.ext.cachedVersionFile.exists() && !gradle.startParameter.taskNames.any {
+            it.startsWith('windowsDistribution') || it.startsWith('linuxDistribution')
+        }) {
+            println "Using cached version file: ${project.ext.cachedVersionFile.absolutePath}"
+            versionToUse = project.ext.cachedVersionFile.text.trim()
+            project.version = versionToUse
+        } else {
+            // Use the current project version (which is determined by git tag or date-time)
+            versionToUse = project.version
+        }
+        
+        // Ensure the resources directory exists
+        def resourcesDir = file("src/main/resources")
+        resourcesDir.mkdirs()
+        
+        // Update version.properties in the source directory
+        def sourceVersionPropsFile = file("src/main/resources/version.properties")
+        sourceVersionPropsFile.text = "version=${versionToUse}\n"
+        println "Updated src/main/resources/version.properties with version: ${versionToUse}"
+        
+        // Create version.txt in the source directory
+        def sourceVersionTxtFile = file("src/main/resources/version.txt")
+        sourceVersionTxtFile.text = versionToUse
+        println "Updated src/main/resources/version.txt with version: ${versionToUse}"
+        
+        // Log version source for debugging
+        def gitVersionInfo = getGitTagVersion()
+        if (gitVersionInfo != null) {
+            println "Version source: Git tag '${gitVersionInfo.originalTag}' -> ${gitVersionInfo.version}"
+        } else {
+            println "Version source: Date-time fallback -> ${versionToUse}"
+        }
+        
+        // If this is the run task, note that we're using cached version
+        if (project.ext.isRunTask) {
+            println "Using cached version for 'run' task: ${versionToUse}"
+        }
+    }
+}
+
+
+// Make processResources depend on updateVersionFiles
+processResources.dependsOn updateVersionFiles
+
+// Also update version files in the build directory
+processResources {
+    doLast {
+        // Determine the version to use based on current context
+        def versionToUse
+        
+        // If the cached version file exists and not executing platform distribution tasks, use the cached version
+        if (project.ext.cachedVersionFile.exists() && !gradle.startParameter.taskNames.any {
+            it.startsWith('windowsDistribution') || it.startsWith('linuxDistribution')
+        }) {
+            println "Using cached version file: ${project.ext.cachedVersionFile.absolutePath}"
+            versionToUse = project.ext.cachedVersionFile.text.trim()
+            project.version = versionToUse
+        } else {
+            // Use the current project version (which is determined by git tag or date-time)
+            versionToUse = project.version
+        }
+        
+        // Ensure the resources directory exists
+        def resourcesDir = file("${buildDir}/resources/main")
+        resourcesDir.mkdirs()
+        
+        // Update version.properties in the build directory
+        def versionFile = new File(resourcesDir, "version.properties")
+        versionFile.text = "version=${versionToUse}\n"
+        println "Generated ${buildDir}/resources/main/version.properties with version: ${versionToUse}"
+        
+        // Update version.txt in the build directory
+        def versionTxtFile = new File(resourcesDir, "version.txt")
+        versionTxtFile.text = versionToUse
+        println "Generated ${buildDir}/resources/main/version.txt with version: ${versionToUse}"
+        
+        // Log version source for debugging
+        def gitVersionInfo = getGitTagVersion()
+        if (gitVersionInfo != null) {
+            println "Build version source: Git tag '${gitVersionInfo.originalTag}' -> ${gitVersionInfo.version}"
+        } else {
+            println "Build version source: Date-time fallback -> ${versionToUse}"
+        }
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from(components.java)
+            
+            // Configure artifact coordinates
+            groupId = 'com.github.printlib'  // GitHub Packages format
+            artifactId = 'printlib'
+            version = project.version
+            
+            artifact jar
+            
+            pom {
+                name = 'printlib'
+                description = 'printlib library for direct printing'
+                url = 'https://github.com/printlib/printlib'
+                
+                licenses {
+                    license {
+                        name = 'GNU Lesser General Public License v2.1'
+                        url = 'https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html'
+                    }
+                }
+                
+                developers {
+                    developer {
+                        id = 'printlib'
+                        name = 'printlib'
+                        email = 'printlib1012245515@gmail.com'
+                    }
+                }
+                
+                scm {
+                    connection = 'scm:git:git://github.com/printlib/printlib.git'
+                    developerConnection = 'scm:git:ssh://github.com:printlib/printlib.git'
+                    url = 'https://github.com/printlib/printlib/tree/master'
+                }
+            }
+        }
+    }
+    
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/printlib/printlib")
+            credentials {
+                username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+                password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+            }
+        }
+    }
+}
+
+
+
+// Disable Javadoc generation for the project's code
+javadoc {
+    enabled = false
+}
+
+// But still keep the encoding setting for other Javadoc-related tasks
+tasks.withType(Javadoc) {
+    options.encoding = 'UTF-8'
+    failOnError = false
+}
+
+
+// Task to copy JavaFX native libraries to the output directory
+task copyJavaFXNativeLibs(dependsOn: downloadJavaFX) {
+    description = 'Copies JavaFX native libraries to the output directory'
+    group = 'build'
+    
+    // Store properties locally to avoid accessing project.ext during execution
+    def javafxSdkDirProp = javafxSdkDir
+    def buildDirProp = buildDir.toString()
+    
+    doLast {
+        // mkdir("${buildDirProp}/dist/libs")
+        copy {
+            from "${javafxSdkDirProp}/bin"
+            include "*.dll"
+            include "*.so"
+            include "*.dylib"
+            into "${buildDirProp}/dist/libs"
+        }
+        logger.lifecycle("JavaFX native libraries copied to ${buildDirProp}/dist/libs")
+    }
+}
+
+// Make build depend on JavaFX download, JSigner download, and signJar
+compileJava.dependsOn downloadJavaFX
+processResources.dependsOn copyJavaFXNativeLibs
+
+// Apply platform-specific build scripts
+def osName = System.getProperty('os.name').toLowerCase()
+if (osName.contains('windows')) {
+  apply from: 'windows-installer.gradle'
+  // Also apply linux-installer.gradle on Windows to enable cross-platform builds
+  apply from: 'linux-installer.gradle'
+} else if (osName.contains('linux')) {
+  apply from: 'linux-installer.gradle'
+  // Optionally apply windows-installer.gradle on Linux for cross-platform builds
+  // apply from: 'windows-installer.gradle'
+} else {
+    throw new GradleException("Unsupported operating system: ${System.getProperty('os.name')}")
+}
+
+
+task downloadJre(group: 'build', description: 'Download JRE for bundling') {
+    doLast {
+        // Implementation would go here
+        println 'Downloading JRE for bundling'
+    }
+}
+
+
+
+
