@@ -33,9 +33,7 @@ import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.server.SslConnectionFactory;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
-import jakarta.annotation.Nullable;
 import jakarta.inject.Inject;
-import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import jakarta.servlet.DispatcherType;
 import lombok.NonNull;
@@ -68,7 +66,9 @@ public abstract class PrintSocketServer {
     private Server server;
     private boolean httpsOnly;
     private boolean sniStrict;
-    private String wssHost;
+    
+    // HARDCODED: Server always binds to all network interfaces
+    private static final String WSS_HOST = "0.0.0.0";
 
     /**
      * Base constructor for PrintSocketServer.
@@ -111,8 +111,7 @@ public abstract class PrintSocketServer {
             return;
         }
 
-        wssHost = PrefsSearch.getString(ArgValue.SECURITY_WSS_HOST, getSSLProperties());
-        log.info("WebSocket server host configured from preferences: {}", wssHost);
+        log.info("WebSocket server host HARDCODED to: {}", WSS_HOST);
         httpsOnly = PrefsSearch.getBoolean(ArgValue.SECURITY_WSS_HTTPSONLY, getSSLProperties());
         sniStrict = PrefsSearch.getBoolean(ArgValue.SECURITY_WSS_SNISTRICT, getSSLProperties());
 
@@ -132,10 +131,10 @@ public abstract class PrintSocketServer {
             try {
                 ServerConnector connector = new ServerConnector(server);
                 connector.setPort(websocketPorts.getInsecurePort());
-                connector.setHost(wssHost);
+                connector.setHost(WSS_HOST);
                 log.info("=== INSECURE CONNECTOR SETUP ===");
                 log.info("Insecure connector port set to: {}", websocketPorts.getInsecurePort());
-                log.info("Insecure connector host set to: {}", wssHost);
+                log.info("Insecure connector host set to: {}", WSS_HOST);
                 
                 if(httpsOnly) {
                     log.info("HTTPS-only mode: Using only secure connector");
@@ -144,12 +143,12 @@ public abstract class PrintSocketServer {
                     //setup insecure connector before secure
                     log.info("Mixed mode: Using both insecure and secure connectors");
                     log.info("Connectors: insecure={}:{}, secure={}:{}",
-                            wssHost, websocketPorts.getInsecurePort(),
-                            wssHost, websocketPorts.getSecurePort());
+                            WSS_HOST, websocketPorts.getInsecurePort(),
+                            WSS_HOST, websocketPorts.getSecurePort());
                     server.setConnectors(new Connector[] {connector, secureConnector});
                 } else {
                     log.info("Insecure-only mode: Using only insecure connector");
-                    log.info("Insecure connector host set to: {}", wssHost);
+                    log.info("Insecure connector host set to: {}", WSS_HOST);
                     server.setConnectors(new Connector[] {connector});
                 }
 
@@ -224,8 +223,7 @@ public abstract class PrintSocketServer {
                 
                 // Log detailed connector information
                 for (Connector conn : server.getConnectors()) {
-                    if (conn instanceof ServerConnector) {
-                        ServerConnector sc = (ServerConnector) conn;
+                    if (conn instanceof ServerConnector sc) {
                         log.info("Active connector: {}:{} (host: {}, port: {})",
                                 sc.getHost() != null ? sc.getHost() : "ALL_INTERFACES",
                                 sc.getPort(),
@@ -296,7 +294,7 @@ public abstract class PrintSocketServer {
         try {
             log.info("=== SECURE PORT CONFIGURATION START ===");
             log.info("SNI Strict mode: {}", sniStrict);
-            log.info("WSS Host: {}", wssHost);
+            log.info("WSS Host: {}", WSS_HOST);
             log.info("Target secure port: {}", websocketPorts.getSecurePort());
             
             final AtomicBoolean runningSecure = new AtomicBoolean(false);
@@ -343,10 +341,10 @@ public abstract class PrintSocketServer {
                     ServerConnector secureConnector = new ServerConnector(server, sslConnection, httpConnection);
                     log.info("ServerConnector created successfully");
                     
-                    secureConnector.setHost(wssHost);
+                    secureConnector.setHost(WSS_HOST);
                     secureConnector.setPort(websocketPorts.getSecurePort());
                     log.info("=== SECURE CONNECTOR SETUP ===");
-                    log.info("Secure connector host set to: {}", wssHost);
+                    log.info("Secure connector host set to: {}", WSS_HOST);
                     log.info("Secure connector port set to: {}", websocketPorts.getSecurePort());
                     
                     log.info("Setting connectors on server...");

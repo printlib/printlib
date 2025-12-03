@@ -86,8 +86,6 @@ public enum ArgValue {
                            "security.wss.snistrict"),
     SECURITY_WSS_HTTPSONLY(PREFERENCES, "Disables insecure http/websocket ports (e.g. '8182')", null, false,
                            "security.wss.httpsonly"),
-    SECURITY_WSS_HOST(PREFERENCES, "Influences which physical adapter to bind to by setting the host parameter for http/websocket listening", null, "localhost",
-                           "security.wss.host"),
     WEBSOCKET_SECURE_PORTS(PREFERENCES, "Comma separated list of secure websocket (wss://) ports to use", null, StringUtils.join(Constants.DEFAULT_WSS_PORTS, ","),
                            "websocket.secure.ports"),
     WEBSOCKET_INSECURE_PORTS(PREFERENCES, "Comma separated list of insecure websocket (ws://) ports to use", null, StringUtils.join(Constants.DEFAULT_WS_PORTS, ","),
