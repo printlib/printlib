@@ -1,0 +1,26 @@
+// Linux Installer Configuration
+// This file contains tasks for building the Linux installer using makeself
+
+// Linux-specific JavaFX configuration
+ext {
+    // JavaFX Linux configuration
+    javafxVersion = '21'
+    javafxUrlVersion = '21.0.6'
+    javafxOs = 'linux'
+    javafxArch = 'x64'
+}
+
+// Linux-specific JavaFX dependencies
+dependencies {
+    // JavaFX dependencies with platform-specific classifiers for Linux
+    // Using the same version as specified in javafxUrlVersion (21.0.6)
+    implementation "org.openjfx:javafx-base:${javafxUrlVersion}:linux"
+    implementation "org.openjfx:javafx-controls:${javafxUrlVersion}:linux"
+    implementation "org.openjfx:javafx-fxml:${javafxUrlVersion}:linux"
+    implementation "org.openjfx:javafx-graphics:${javafxUrlVersion}:linux"
+    // implementation "org.openjfx:javafx-media:${javafxUrlVersion}:linux"
+    implementation "org.openjfx:javafx-swing:${javafxUrlVersion}:linux"
+    implementation "org.openjfx:javafx-web:${javafxUrlVersion}:linux"
+    
+    // Note: Using JavaFX 21 to match debugger JVM version (21.0.2)
+}

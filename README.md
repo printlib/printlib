@@ -1,23 +1,22 @@
-QZ Tray
-========
+# printlib
 
- [![Build Status](https://github.com/qzind/tray/actions/workflows/build.yaml/badge.svg)](../../actions) [![Downloads](https://img.shields.io/github/downloads/qzind/tray/latest/total.svg)](../../releases) [![Issues](https://img.shields.io/github/issues/qzind/tray.svg)](../../issues) [![Commits](https://img.shields.io/github/commit-activity/m/qzind/tray.svg)](../../commits)
+A Java Library for direct printing, based on the QZ Tray Library qz.io
 
-Browser plugin for sending documents and raw commands to a printer or attached device
+## License
 
-## Getting Started
-  * Download here https://qz.io/download/
-  * See our [Getting Started](../../wiki/getting-started) guide.
-  * Visit our home page https://qz.io.
-  
-## Support
-  * File a bug via our [issue tracker](../../issues)
-  * Ask the community via our [community support page](https://qz.io/support/)
-  * Ask the developers via [premium support](https://qz.io/contact/) (fees may apply)
+This project is licensed under the GNU Lesser General Public License v2.1 (LGPL-2.1) - see the [LICENSE](LICENSE) file for details.
 
-## Changelog
-  * See our [most recent releases](../../releases)
+The LGPL-2.1 license allows you to:
+- Use this library in your own projects (both open source and proprietary)
+- Modify the library for your own use
+- Distribute the library with your applications
 
-## Java Developer Resources
-  * [Install dependencies](../../wiki/install-dependencies)
-  * [Compile, Package](../../wiki/compiling)
+However, if you modify this library, you must:
+- Make your modifications available under the same LGPL license
+- Clearly mark modified files
+- Provide access to the source code of your modifications
+
+For more information about the LGPL license, see:
+- [GNU Lesser General Public License v2.1](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
+- [GPL v2.0](GPL-2.0) (referenced by LGPL)
+

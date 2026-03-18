@@ -6,8 +6,30 @@
 /.idea/uiDesigner.xml
 /.idea/compiler.xml
 /fx.zip
-/README.md
 /provision.json
 .DS_Store
 windows-debug-launcher.nsi.in
-/ant/private/qz.ks
+*.exe
+*.dll
+!installer/windows/nsis/Plugins/Release_Unicode/StdUtils.dll
+!installer/windows/nsis/Plugins/Release_ANSI/StdUtils.dll
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.zip
+*.tar.gz
+*.tar.bz2
+*.tgz
+*.bz2
+*.gz
+*.7z
+*.rar
+*.bin
+*.log
+*.tmp
+*.class
+#gradle files
+.gradle/
+/build/
+#idea files
+.idea/
+/bin/

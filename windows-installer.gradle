@@ -1,0 +1,27 @@
+// Windows Installer Configuration
+// This file contains tasks for building the Windows installer using NSIS
+
+// Windows-specific JavaFX configuration
+ext {
+    // JavaFX Windows configuration
+    javafxVersion = '21'
+    javafxUrlVersion = '21.0.6'
+    javafxOs = 'windows'
+    javafxArch = 'x64'
+}
+
+// Windows-specific JavaFX dependencies
+dependencies {
+    // JavaFX dependencies with platform-specific classifiers for Windows
+    // Using the same version as specified in javafxUrlVersion (21.0.6)
+    implementation "org.openjfx:javafx-base:${javafxUrlVersion}:win"
+    implementation "org.openjfx:javafx-controls:${javafxUrlVersion}:win"
+    implementation "org.openjfx:javafx-fxml:${javafxUrlVersion}:win"
+    implementation "org.openjfx:javafx-graphics:${javafxUrlVersion}:win"
+    // implementation "org.openjfx:javafx-media:${javafxUrlVersion}:win"
+    implementation "org.openjfx:javafx-swing:${javafxUrlVersion}:win"
+    implementation "org.openjfx:javafx-web:${javafxUrlVersion}:win"
+    
+    // Note: Using JavaFX 21 to match debugger JVM version (21.0.2)
+}
+
