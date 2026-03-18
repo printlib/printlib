@@ -2,13 +2,16 @@
 
 /**
  * @version 2.2.5
- * @overview QZ Tray Connector
+ * @overview PrintLib - Printing & Device Communication Library
  * @license LGPL-2.1-only
+ * <p/>
+ * Based on QZ Tray Connector (https://qz.io) by QZ Industries, LLC.
+ * Original source licensed under LGPL-2.1-only.
  * <p/>
  * Connects a web client to the QZ Tray software.
  * Enables printing and device communication from javascript.
  */
-var qz = (function() {
+var printlib = (function() {
 
 ///// POLYFILLS /////
 
@@ -26,19 +29,19 @@ var qz = (function() {
 
 ///// PRIVATE METHODS /////
 
-    var _qz = {
+    var _printlib = {
         VERSION: "2.2.5",                              //must match @version above
         DEBUG: false,
 
         log: {
             /** Debugging messages */
-            trace: function() { if (_qz.DEBUG) { console.log.apply(console, arguments); } },
+            trace: function() { if (_printlib.DEBUG) { console.log.apply(console, arguments); } },
             /** General messages */
             info: function() { console.info.apply(console, arguments); },
             /** General warnings */
             warn: function() { console.warn.apply(console, arguments); },
             /** Debugging errors */
-            allay: function() { if (_qz.DEBUG) { console.warn.apply(console, arguments); } },
+            allay: function() { if (_printlib.DEBUG) { console.warn.apply(console, arguments); } },
             /** General errors */
             error: function() { console.error.apply(console, arguments); }
         },
@@ -56,7 +59,7 @@ var qz = (function() {
             /** Track if a connection attempt is being cancelled. */
             shutdown: false,
 
-            /** Default parameters used on new connections. Override values using options parameter on {@link qz.websocket.connect}. */
+            /** Default parameters used on new connections. Override values using options parameter on {@link printlib.websocket.connect}. */
             connectConfig: {
                 host: ["localhost", "localhost.qz.io"], //hosts QZ Tray can be running on
                 hostIndex: 0,                           //internal var - index on host array
@@ -78,7 +81,7 @@ var qz = (function() {
             setup: {
                 /** Loop through possible ports to open connection, sets web socket calls that will settle the promise. */
                 findConnection: function(config, resolve, reject) {
-                    if (_qz.websocket.shutdown) {
+                    if (_printlib.websocket.shutdown) {
                         reject(new Error("Connection attempt cancelled by user"));
                         return;
                     }
@@ -89,16 +92,16 @@ var qz = (function() {
                             reject(new Error("No ports have been specified to connect over"));
                             return;
                         } else if (config.usingSecure) {
-                            _qz.log.error("No secure ports specified - forcing insecure connection");
+                            _printlib.log.error("No secure ports specified - forcing insecure connection");
                             config.usingSecure = false;
                         }
                     } else if (!config.port.insecure.length && !config.usingSecure) {
-                        _qz.log.trace("No insecure ports specified - forcing secure connection");
+                        _printlib.log.trace("No insecure ports specified - forcing secure connection");
                         config.usingSecure = true;
                     }
 
                     var deeper = function() {
-                        if (_qz.websocket.shutdown) {
+                        if (_printlib.websocket.shutdown) {
                             //connection attempt was cancelled, bail out
                             reject(new Error("Connection attempt cancelled by user"));
                             return;
@@ -110,7 +113,7 @@ var qz = (function() {
                             || (!config.usingSecure && config.port.portIndex >= config.port.insecure.length)) {
                             if (config.hostIndex >= config.host.length - 1) {
                                 //give up, all hope is lost
-                                reject(new Error("Unable to establish connection with QZ"));
+                                reject(new Error("Unable to establish connection with PrintLib"));
                                 return;
                             } else {
                                 config.hostIndex++;
@@ -119,7 +122,7 @@ var qz = (function() {
                         }
 
                         // recursive call until connection established or all ports are exhausted
-                        _qz.websocket.setup.findConnection(config, resolve, reject);
+                        _printlib.websocket.setup.findConnection(config, resolve, reject);
                     };
 
                     var address;
@@ -130,54 +133,54 @@ var qz = (function() {
                     }
 
                     try {
-                        _qz.log.trace("Attempting connection", address);
-                        _qz.websocket.connection = new _qz.tools.ws(address);
+                        _printlib.log.trace("Attempting connection", address);
+                        _printlib.websocket.connection = new _printlib.tools.ws(address);
                     }
                     catch(err) {
-                        _qz.log.error(err);
+                        _printlib.log.error(err);
                         deeper();
                         return;
                     }
 
-                    if (_qz.websocket.connection != null) {
-                        _qz.websocket.connection.established = false;
+                    if (_printlib.websocket.connection != null) {
+                        _printlib.websocket.connection.established = false;
 
-                        //called on successful connection to qz, begins setup of websocket calls and resolves connect promise after certificate is sent
-                        _qz.websocket.connection.onopen = function(evt) {
-                            if (!_qz.websocket.connection.established) {
-                                _qz.log.trace(evt);
-                                _qz.log.info("Established connection with QZ Tray on " + address);
+                        //called on successful connection to printlib, begins setup of websocket calls and resolves connect promise after certificate is sent
+                        _printlib.websocket.connection.onopen = function(evt) {
+                            if (!_printlib.websocket.connection.established) {
+                                _printlib.log.trace(evt);
+                                _printlib.log.info("Established connection with PrintLib on " + address);
 
-                                _qz.websocket.setup.openConnection({ resolve: resolve, reject: reject });
+                                _printlib.websocket.setup.openConnection({ resolve: resolve, reject: reject });
 
                                 if (config.keepAlive > 0) {
                                     var interval = setInterval(function() {
-                                        if (!_qz.tools.isActive() || _qz.websocket.connection.interval !== interval) {
+                                        if (!_printlib.tools.isActive() || _printlib.websocket.connection.interval !== interval) {
                                             clearInterval(interval);
                                             return;
                                         }
 
-                                        _qz.websocket.connection.send("ping");
+                                        _printlib.websocket.connection.send("ping");
                                     }, config.keepAlive * 1000);
 
-                                    _qz.websocket.connection.interval = interval;
+                                    _printlib.websocket.connection.interval = interval;
                                 }
                             }
                         };
 
                         //called during websocket close during setup
-                        _qz.websocket.connection.onclose = function() {
+                        _printlib.websocket.connection.onclose = function() {
                             // Safari compatibility fix to raise error event
-                            if (_qz.websocket.connection && typeof navigator !== 'undefined' && navigator.userAgent.indexOf('Safari') != -1 && navigator.userAgent.indexOf('Chrome') == -1) {
-                                _qz.websocket.connection.onerror();
+                            if (_printlib.websocket.connection && typeof navigator !== 'undefined' && navigator.userAgent.indexOf('Safari') != -1 && navigator.userAgent.indexOf('Chrome') == -1) {
+                                _printlib.websocket.connection.onerror();
                             }
                         };
 
                         //called for errors during setup (such as invalid ports), reject connect promise only if all ports have been tried
-                        _qz.websocket.connection.onerror = function(evt) {
-                            _qz.log.trace(evt);
+                        _printlib.websocket.connection.onerror = function(evt) {
+                            _printlib.log.trace(evt);
 
-                            _qz.websocket.connection = null;
+                            _printlib.websocket.connection = null;
 
                             deeper();
                         };
@@ -188,19 +191,19 @@ var qz = (function() {
 
                 /** Finish setting calls on successful connection, sets web socket calls that won't settle the promise. */
                 openConnection: function(openPromise) {
-                    _qz.websocket.connection.established = true;
+                    _printlib.websocket.connection.established = true;
 
                     //called when an open connection is closed
-                    _qz.websocket.connection.onclose = function(evt) {
-                        _qz.log.trace(evt);
+                    _printlib.websocket.connection.onclose = function(evt) {
+                        _printlib.log.trace(evt);
 
-                        _qz.websocket.connection = null;
-                        _qz.websocket.callClose(evt);
-                        _qz.log.info("Closed connection with QZ Tray");
+                        _printlib.websocket.connection = null;
+                        _printlib.websocket.callClose(evt);
+                        _printlib.log.info("Closed connection with PrintLib");
 
-                        for(var uid in _qz.websocket.pendingCalls) {
-                            if (_qz.websocket.pendingCalls.hasOwnProperty(uid)) {
-                                _qz.websocket.pendingCalls[uid].reject(new Error("Connection closed before response received"));
+                        for(var uid in _printlib.websocket.pendingCalls) {
+                            if (_printlib.websocket.pendingCalls.hasOwnProperty(uid)) {
+                                _printlib.websocket.pendingCalls[uid].reject(new Error("Connection closed before response received"));
                             }
                         }
 
@@ -211,13 +214,13 @@ var qz = (function() {
                     };
 
                     //called for any errors with an open connection
-                    _qz.websocket.connection.onerror = function(evt) {
-                        _qz.websocket.callError(evt);
+                    _printlib.websocket.connection.onerror = function(evt) {
+                        _printlib.websocket.callError(evt);
                     };
 
-                    //send JSON objects to qz
-                    _qz.websocket.connection.sendData = function(obj) {
-                        _qz.log.trace("Preparing object for websocket", obj);
+                    //send JSON objects to printlib
+                    _printlib.websocket.connection.sendData = function(obj) {
+                        _printlib.log.trace("Preparing object for websocket", obj);
 
                         if (obj.timestamp == undefined) {
                             obj.timestamp = Date.now();
@@ -226,8 +229,8 @@ var qz = (function() {
                             }
                         }
                         if (obj.promise != undefined) {
-                            obj.uid = _qz.websocket.setup.newUID();
-                            _qz.websocket.pendingCalls[obj.uid] = obj.promise;
+                            obj.uid = _printlib.websocket.setup.newUID();
+                            _printlib.websocket.pendingCalls[obj.uid] = obj.promise;
                         }
 
                         // track requesting monitor
@@ -237,7 +240,7 @@ var qz = (function() {
                         };
 
                         try {
-                            if (obj.call != undefined && obj.signature == undefined && _qz.security.needsSigned(obj.call)) {
+                            if (obj.call != undefined && obj.signature == undefined && _printlib.security.needsSigned(obj.call)) {
                                 var signObj = {
                                     call: obj.call,
                                     params: obj.params,
@@ -245,87 +248,87 @@ var qz = (function() {
                                 };
 
                                 //make a hashing promise if not already one
-                                var hashing = _qz.tools.hash(_qz.tools.stringify(signObj));
+                                var hashing = _printlib.tools.hash(_printlib.tools.stringify(signObj));
                                 if (!hashing.then) {
-                                    hashing = _qz.tools.promise(function(resolve) {
+                                    hashing = _printlib.tools.promise(function(resolve) {
                                         resolve(hashing);
                                     });
                                 }
 
                                 hashing.then(function(hashed) {
-                                    return _qz.security.callSign(hashed);
+                                    return _printlib.security.callSign(hashed);
                                 }).then(function(signature) {
-                                    _qz.log.trace("Signature for call", signature);
+                                    _printlib.log.trace("Signature for call", signature);
                                     obj.signature = signature || "";
-                                    obj.signAlgorithm = _qz.security.signAlgorithm;
+                                    obj.signAlgorithm = _printlib.security.signAlgorithm;
 
-                                    _qz.signContent = undefined;
-                                    _qz.websocket.connection.send(_qz.tools.stringify(obj));
+                                    _printlib.signContent = undefined;
+                                    _printlib.websocket.connection.send(_printlib.tools.stringify(obj));
                                 }).catch(function(err) {
-                                    _qz.log.error("Signing failed", err);
+                                    _printlib.log.error("Signing failed", err);
 
                                     if (obj.promise != undefined) {
                                         obj.promise.reject(new Error("Failed to sign request"));
-                                        delete _qz.websocket.pendingCalls[obj.uid];
+                                        delete _printlib.websocket.pendingCalls[obj.uid];
                                     }
                                 });
                             } else {
-                                _qz.log.trace("Signature for call", obj.signature);
+                                _printlib.log.trace("Signature for call", obj.signature);
 
                                 //called for pre-signed content and (unsigned) setup calls
-                                _qz.websocket.connection.send(_qz.tools.stringify(obj));
+                                _printlib.websocket.connection.send(_printlib.tools.stringify(obj));
                             }
                         }
                         catch(err) {
-                            _qz.log.error(err);
+                            _printlib.log.error(err);
 
                             if (obj.promise != undefined) {
                                 obj.promise.reject(err);
-                                delete _qz.websocket.pendingCalls[obj.uid];
+                                delete _printlib.websocket.pendingCalls[obj.uid];
                             }
                         }
                     };
 
-                    //receive message from qz
-                    _qz.websocket.connection.onmessage = function(evt) {
+                    //receive message from printlib
+                    _printlib.websocket.connection.onmessage = function(evt) {
                         var returned = JSON.parse(evt.data);
 
                         if (returned.uid == null) {
                             if (returned.type == null) {
-                                //incorrect response format, likely connected to incompatible qz version
-                                _qz.websocket.connection.close(4003, "Connected to incompatible QZ Tray version");
+                                //incorrect response format, likely connected to incompatible printlib version
+                                _printlib.websocket.connection.close(4003, "Connected to incompatible QZ Tray version");
 
                             } else {
                                 //streams (callbacks only, no promises)
                                 switch(returned.type) {
-                                    case _qz.streams.serial:
+                                    case _printlib.streams.serial:
                                         if (!returned.event) {
                                             returned.event = JSON.stringify({ portName: returned.key, output: returned.data });
                                         }
 
-                                        _qz.serial.callSerial(JSON.parse(returned.event));
+                                        _printlib.serial.callSerial(JSON.parse(returned.event));
                                         break;
-                                    case _qz.streams.socket:
-                                        _qz.socket.callSocket(JSON.parse(returned.event));
+                                    case _printlib.streams.socket:
+                                        _printlib.socket.callSocket(JSON.parse(returned.event));
                                         break;
-                                    case _qz.streams.usb:
+                                    case _printlib.streams.usb:
                                         if (!returned.event) {
                                             returned.event = JSON.stringify({ vendorId: returned.key[0], productId: returned.key[1], output: returned.data });
                                         }
 
-                                        _qz.usb.callUsb(JSON.parse(returned.event));
+                                        _printlib.usb.callUsb(JSON.parse(returned.event));
                                         break;
-                                    case _qz.streams.hid:
-                                        _qz.hid.callHid(JSON.parse(returned.event));
+                                    case _printlib.streams.hid:
+                                        _printlib.hid.callHid(JSON.parse(returned.event));
                                         break;
-                                    case _qz.streams.printer:
-                                        _qz.printers.callPrinter(JSON.parse(returned.event));
+                                    case _printlib.streams.printer:
+                                        _printlib.printers.callPrinter(JSON.parse(returned.event));
                                         break;
-                                    case _qz.streams.file:
-                                        _qz.file.callFile(JSON.parse(returned.event));
+                                    case _printlib.streams.file:
+                                        _printlib.file.callFile(JSON.parse(returned.event));
                                         break;
                                     default:
-                                        _qz.log.allay("Cannot determine stream type for callback", returned);
+                                        _printlib.log.allay("Cannot determine stream type for callback", returned);
                                         break;
                                 }
                             }
@@ -333,11 +336,11 @@ var qz = (function() {
                             return;
                         }
 
-                        _qz.log.trace("Received response from websocket", returned);
+                        _printlib.log.trace("Received response from websocket", returned);
 
-                        var promise = _qz.websocket.pendingCalls[returned.uid];
+                        var promise = _printlib.websocket.pendingCalls[returned.uid];
                         if (promise == undefined) {
-                            _qz.log.allay('No promise found for returned response');
+                            _printlib.log.allay('No promise found for returned response');
                         } else {
                             if (returned.error != undefined) {
                                 promise.reject(new Error(returned.error));
@@ -346,7 +349,7 @@ var qz = (function() {
                             }
                         }
 
-                        delete _qz.websocket.pendingCalls[returned.uid];
+                        delete _printlib.websocket.pendingCalls[returned.uid];
                     };
 
 
@@ -356,36 +359,36 @@ var qz = (function() {
                         if (cert === undefined) { cert = null; }
 
                         //websocket setup, query what version is connected
-                        qz.api.getVersion().then(function(version) {
-                            _qz.websocket.connection.version = version;
-                            _qz.websocket.connection.semver = version.toLowerCase().replace(/-rc\./g, "-rc").split(/[\\+\\.-]/g);
-                            for(var i = 0; i < _qz.websocket.connection.semver.length; i++) {
+                        printlib.api.getVersion().then(function(version) {
+                            _printlib.websocket.connection.version = version;
+                            _printlib.websocket.connection.semver = version.toLowerCase().replace(/-rc\./g, "-rc").split(/[\\+\\.-]/g);
+                            for(var i = 0; i < _printlib.websocket.connection.semver.length; i++) {
                                 try {
-                                    if (i == 3 && _qz.websocket.connection.semver[i].toLowerCase().indexOf("rc") == 0) {
+                                    if (i == 3 && _printlib.websocket.connection.semver[i].toLowerCase().indexOf("rc") == 0) {
                                         // Handle "rc1" pre-release by negating build info
-                                        _qz.websocket.connection.semver[i] = -(_qz.websocket.connection.semver[i].replace(/\D/g, ""));
+                                        _printlib.websocket.connection.semver[i] = -(_printlib.websocket.connection.semver[i].replace(/\D/g, ""));
                                         continue;
                                     }
-                                    _qz.websocket.connection.semver[i] = parseInt(_qz.websocket.connection.semver[i]);
+                                    _printlib.websocket.connection.semver[i] = parseInt(_printlib.websocket.connection.semver[i]);
                                 }
                                 catch(ignore) {}
 
-                                if (_qz.websocket.connection.semver.length < 4) {
-                                    _qz.websocket.connection.semver[3] = 0;
+                                if (_printlib.websocket.connection.semver.length < 4) {
+                                    _printlib.websocket.connection.semver[3] = 0;
                                 }
                             }
 
                             //algorithm can be declared before a connection, check for incompatibilities now that we have one
-                            _qz.compatible.algorithm(true);
+                            _printlib.compatible.algorithm(true);
                         }).then(function() {
-                            _qz.websocket.connection.sendData({ certificate: cert, promise: openPromise });
+                            _printlib.websocket.connection.sendData({ certificate: cert, promise: openPromise });
                         });
                     }
 
-                    _qz.security.callCert().then(sendCert).catch(function(error) {
-                        _qz.log.warn("Failed to get certificate:", error);
+                    _printlib.security.callCert().then(sendCert).catch(function(error) {
+                        _printlib.log.warn("Failed to get certificate:", error);
 
-                        if (_qz.security.rejectOnCertFailure) {
+                        if (_printlib.security.rejectOnCertFailure) {
                             openPromise.reject(error);
                         } else {
                             sendCert(null);
@@ -401,7 +404,7 @@ var qz = (function() {
             },
 
             dataPromise: function(callName, params, signature, signingTimestamp) {
-                return _qz.tools.promise(function(resolve, reject) {
+                return _printlib.tools.promise(function(resolve, reject) {
                     var msg = {
                         call: callName,
                         promise: { resolve: resolve, reject: reject },
@@ -410,7 +413,7 @@ var qz = (function() {
                         timestamp: signingTimestamp
                     };
 
-                    _qz.websocket.connection.sendData(msg);
+                    _printlib.websocket.connection.sendData(msg);
                 });
             },
 
@@ -421,12 +424,12 @@ var qz = (function() {
             errorCallbacks: [],
             /** Calls all functions registered to listen for errors. */
             callError: function(evt) {
-                if (Array.isArray(_qz.websocket.errorCallbacks)) {
-                    for(var i = 0; i < _qz.websocket.errorCallbacks.length; i++) {
-                        _qz.websocket.errorCallbacks[i](evt);
+                if (Array.isArray(_printlib.websocket.errorCallbacks)) {
+                    for(var i = 0; i < _printlib.websocket.errorCallbacks.length; i++) {
+                        _printlib.websocket.errorCallbacks[i](evt);
                     }
                 } else {
-                    _qz.websocket.errorCallbacks(evt);
+                    _printlib.websocket.errorCallbacks(evt);
                 }
             },
 
@@ -434,21 +437,21 @@ var qz = (function() {
             closedCallbacks: [],
             /** Calls all functions registered to listen for closing. */
             callClose: function(evt) {
-                if (Array.isArray(_qz.websocket.closedCallbacks)) {
-                    for(var i = 0; i < _qz.websocket.closedCallbacks.length; i++) {
-                        _qz.websocket.closedCallbacks[i](evt);
+                if (Array.isArray(_printlib.websocket.closedCallbacks)) {
+                    for(var i = 0; i < _printlib.websocket.closedCallbacks.length; i++) {
+                        _printlib.websocket.closedCallbacks[i](evt);
                     }
                 } else {
-                    _qz.websocket.closedCallbacks(evt);
+                    _printlib.websocket.closedCallbacks(evt);
                 }
             }
         },
 
 
         printing: {
-            /** Default options used for new printer configs. Can be overridden using {@link qz.configs.setDefaults}. */
+            /** Default options used for new printer configs. Can be overridden using {@link printlib.configs.setDefaults}. */
             defaultConfig: {
-                //value purposes are explained in the qz.configs.setDefaults docs
+                //value purposes are explained in the printlib.configs.setDefaults docs
 
                 bounds: null,
                 colorType: 'color',
@@ -481,12 +484,12 @@ var qz = (function() {
             serialCallbacks: [],
             /** Calls all functions registered to listen for serial events. */
             callSerial: function(streamEvent) {
-                if (Array.isArray(_qz.serial.serialCallbacks)) {
-                    for(var i = 0; i < _qz.serial.serialCallbacks.length; i++) {
-                        _qz.serial.serialCallbacks[i](streamEvent);
+                if (Array.isArray(_printlib.serial.serialCallbacks)) {
+                    for(var i = 0; i < _printlib.serial.serialCallbacks.length; i++) {
+                        _printlib.serial.serialCallbacks[i](streamEvent);
                     }
                 } else {
-                    _qz.serial.serialCallbacks(streamEvent);
+                    _printlib.serial.serialCallbacks(streamEvent);
                 }
             }
         },
@@ -497,12 +500,12 @@ var qz = (function() {
             socketCallbacks: [],
             /** Calls all functions registered to listen for network socket events. */
             callSocket: function(socketEvent) {
-                if (Array.isArray(_qz.socket.socketCallbacks)) {
-                    for(var i = 0; i < _qz.socket.socketCallbacks.length; i++) {
-                        _qz.socket.socketCallbacks[i](socketEvent);
+                if (Array.isArray(_printlib.socket.socketCallbacks)) {
+                    for(var i = 0; i < _printlib.socket.socketCallbacks.length; i++) {
+                        _printlib.socket.socketCallbacks[i](socketEvent);
                     }
                 } else {
-                    _qz.socket.socketCallbacks(socketEvent);
+                    _printlib.socket.socketCallbacks(socketEvent);
                 }
             }
         },
@@ -513,12 +516,12 @@ var qz = (function() {
             usbCallbacks: [],
             /** Calls all functions registered to listen for usb events. */
             callUsb: function(streamEvent) {
-                if (Array.isArray(_qz.usb.usbCallbacks)) {
-                    for(var i = 0; i < _qz.usb.usbCallbacks.length; i++) {
-                        _qz.usb.usbCallbacks[i](streamEvent);
+                if (Array.isArray(_printlib.usb.usbCallbacks)) {
+                    for(var i = 0; i < _printlib.usb.usbCallbacks.length; i++) {
+                        _printlib.usb.usbCallbacks[i](streamEvent);
                     }
                 } else {
-                    _qz.usb.usbCallbacks(streamEvent);
+                    _printlib.usb.usbCallbacks(streamEvent);
                 }
             }
         },
@@ -529,12 +532,12 @@ var qz = (function() {
             hidCallbacks: [],
             /** Calls all functions registered to listen for hid events. */
             callHid: function(streamEvent) {
-                if (Array.isArray(_qz.hid.hidCallbacks)) {
-                    for(var i = 0; i < _qz.hid.hidCallbacks.length; i++) {
-                        _qz.hid.hidCallbacks[i](streamEvent);
+                if (Array.isArray(_printlib.hid.hidCallbacks)) {
+                    for(var i = 0; i < _printlib.hid.hidCallbacks.length; i++) {
+                        _printlib.hid.hidCallbacks[i](streamEvent);
                     }
                 } else {
-                    _qz.hid.hidCallbacks(streamEvent);
+                    _printlib.hid.hidCallbacks(streamEvent);
                 }
             }
         },
@@ -545,12 +548,12 @@ var qz = (function() {
             printerCallbacks: [],
             /** Calls all functions registered to listen for printer events. */
             callPrinter: function(streamEvent) {
-                if (Array.isArray(_qz.printers.printerCallbacks)) {
-                    for(var i = 0; i < _qz.printers.printerCallbacks.length; i++) {
-                        _qz.printers.printerCallbacks[i](streamEvent);
+                if (Array.isArray(_printlib.printers.printerCallbacks)) {
+                    for(var i = 0; i < _printlib.printers.printerCallbacks.length; i++) {
+                        _printlib.printers.printerCallbacks[i](streamEvent);
                     }
                 } else {
-                    _qz.printers.printerCallbacks(streamEvent);
+                    _printlib.printers.printerCallbacks(streamEvent);
                 }
             }
         },
@@ -561,12 +564,12 @@ var qz = (function() {
             fileCallbacks: [],
             /** Calls all functions registered to listen for file events. */
             callFile: function(streamEvent) {
-                if (Array.isArray(_qz.file.fileCallbacks)) {
-                    for(var i = 0; i < _qz.file.fileCallbacks.length; i++) {
-                        _qz.file.fileCallbacks[i](streamEvent);
+                if (Array.isArray(_printlib.file.fileCallbacks)) {
+                    for(var i = 0; i < _printlib.file.fileCallbacks.length; i++) {
+                        _printlib.file.fileCallbacks[i](streamEvent);
                     }
                 } else {
-                    _qz.file.fileCallbacks(streamEvent);
+                    _printlib.file.fileCallbacks(streamEvent);
                 }
             }
         },
@@ -575,30 +578,30 @@ var qz = (function() {
         security: {
             /** Function used to resolve promise when acquiring site's public certificate. */
             certHandler: function(resolve, reject) { reject(); },
-            /** Called to create new promise (using {@link _qz.security.certHandler}) for certificate retrieval. */
+            /** Called to create new promise (using {@link _printlib.security.certHandler}) for certificate retrieval. */
             callCert: function() {
-                if (typeof _qz.security.certHandler.then === 'function') {
+                if (typeof _printlib.security.certHandler.then === 'function') {
                     //already a promise
-                    return _qz.security.certHandler;
-                } else if (_qz.security.certHandler.constructor.name === "AsyncFunction") {
+                    return _printlib.security.certHandler;
+                } else if (_printlib.security.certHandler.constructor.name === "AsyncFunction") {
                     //already callable as a promise
-                    return _qz.security.certHandler();
+                    return _printlib.security.certHandler();
                 } else {
                     //turn into a promise
-                    return _qz.tools.promise(_qz.security.certHandler);
+                    return _printlib.tools.promise(_printlib.security.certHandler);
                 }
             },
 
             /** Function used to create promise resolver when requiring signed calls. */
             signatureFactory: function() { return function(resolve) { resolve(); } },
-            /** Called to create new promise (using {@link _qz.security.signatureFactory}) for signed calls. */
+            /** Called to create new promise (using {@link _printlib.security.signatureFactory}) for signed calls. */
             callSign: function(toSign) {
-                if (_qz.security.signatureFactory.constructor.name === "AsyncFunction") {
+                if (_printlib.security.signatureFactory.constructor.name === "AsyncFunction") {
                     //use directly
-                    return _qz.security.signatureFactory(toSign);
+                    return _printlib.security.signatureFactory(toSign);
                 } else {
                     //use in a promise
-                    return _qz.tools.promise(_qz.security.signatureFactory(toSign));
+                    return _printlib.tools.promise(_printlib.security.signatureFactory(toSign));
                 }
             },
 
@@ -636,13 +639,13 @@ var qz = (function() {
                 } else if (typeof Promise !== 'undefined') {
                     return new Promise(resolver);
                 } else {
-                    _qz.log.error("Promise/A+ support is required.  See qz.api.setPromiseType(...)");
+                    _printlib.log.error("Promise/A+ support is required. See printlib.api.setPromiseType(...)");
                 }
             },
 
             /** Stub for rejecting with an Error from withing a Promise */
             reject: function(error) {
-                return _qz.tools.promise(function(resolve, reject) {
+                return _printlib.tools.promise(function(resolve, reject) {
                     reject(error);
                 });
             },
@@ -674,7 +677,7 @@ var qz = (function() {
                 if (typeof Sha256 !== 'undefined') {
                     return Sha256.hash(data);
                 } else {
-                    return _qz.SHA.hash(data);
+                    return _printlib.SHA.hash(data);
                 }
             },
 
@@ -719,10 +722,10 @@ var qz = (function() {
 
                         if (absolute) {
                             //change relative links to absolute
-                            data[i].data = _qz.tools.absolute(data[i].data);
+                            data[i].data = _printlib.tools.absolute(data[i].data);
                         }
                         if (data[i].options && typeof data[i].options.overlay === 'string') {
-                            data[i].options.overlay = _qz.tools.absolute(data[i].options.overlay);
+                            data[i].options.overlay = _printlib.tools.absolute(data[i].options.overlay);
                         }
                     }
                 }
@@ -751,7 +754,7 @@ var qz = (function() {
                                     clone = target[key] || {};
                                 }
 
-                                target[key] = _qz.tools.extend(clone, source[key]);
+                                target[key] = _printlib.tools.extend(clone, source[key]);
                             } else if (source[key] !== undefined) {
                                 target[key] = source[key];
                             }
@@ -763,8 +766,8 @@ var qz = (function() {
             },
 
             versionCompare: function(major, minor, patch, build) {
-                if (_qz.tools.assertActive()) {
-                    var semver = _qz.websocket.connection.semver;
+                if (_printlib.tools.assertActive()) {
+                    var semver = _printlib.websocket.connection.semver;
                     if (semver[0] != major) {
                         return semver[0] - major;
                     }
@@ -782,21 +785,21 @@ var qz = (function() {
             },
 
             isVersion: function(major, minor, patch, build) {
-                return _qz.tools.versionCompare(major, minor, patch, build) == 0;
+                return _printlib.tools.versionCompare(major, minor, patch, build) == 0;
             },
 
             isActive: function() {
-                return !_qz.websocket.shutdown && _qz.websocket.connection != null
-                    && (_qz.websocket.connection.readyState === _qz.tools.ws.OPEN
-                        || _qz.websocket.connection.readyState === _qz.tools.ws.CONNECTING);
+                return !_printlib.websocket.shutdown && _printlib.websocket.connection != null
+                    && (_printlib.websocket.connection.readyState === _printlib.tools.ws.OPEN
+                        || _printlib.websocket.connection.readyState === _printlib.tools.ws.CONNECTING);
             },
 
             assertActive: function() {
-                if (_qz.tools.isActive()) {
+                if (_printlib.tools.isActive()) {
                     return true;
                 }
                 // Promise won't reject on throw; yet better than 'undefined'
-                throw new Error("A connection to QZ has not been established yet");
+                throw new Error("A connection to PrintLib has not been established yet");
             },
 
             uint8ArrayToHex: function(uint8) {
@@ -848,10 +851,10 @@ var qz = (function() {
                             var flavor = printData[i].flavor.toString().toUpperCase();
                             switch(flavor) {
                                 case 'BASE64':
-                                    printData[i].data = _qz.tools.uint8ArrayToBase64(printData[i].data);
+                                    printData[i].data = _printlib.tools.uint8ArrayToBase64(printData[i].data);
                                     break;
                                 case 'HEX':
-                                    printData[i].data = _qz.tools.uint8ArrayToHex(printData[i].data);
+                                    printData[i].data = _printlib.tools.uint8ArrayToHex(printData[i].data);
                                     break;
                                 default:
                                     throw new Error("Uint8Array conversion to '" + flavor + "' is not supported.");
@@ -860,7 +863,7 @@ var qz = (function() {
                     }
                 }
 
-                if(_qz.tools.versionCompare(2, 2, 4) < 0) {
+                if(_printlib.tools.versionCompare(2, 2, 4) < 0) {
                     for(var i = 0; i < printData.length; i++) {
                         if (printData[i].constructor === Object) {
                             // dotDensity: "double-legacy|single-legacy" since 2.2.4.  Fallback to "double|single"
@@ -871,7 +874,7 @@ var qz = (function() {
                     }
                 }
 
-                if (_qz.tools.isVersion(2, 0)) {
+                if (_printlib.tools.isVersion(2, 0)) {
                     /*
                     2.0.x conversion
                     -----
@@ -881,7 +884,7 @@ var qz = (function() {
 
                      flavor translates straight to 2.0 format (unless forced to 'raw'/'image')
                      */
-                    _qz.log.trace("Converting print data to v2.0 for " + _qz.websocket.connection.version);
+                    _printlib.log.trace("Converting print data to v2.0 for " + _printlib.websocket.connection.version);
                     for(var i = 0; i < printData.length; i++) {
                         if (printData[i].constructor === Object) {
                             if (printData[i].type && printData[i].type.toUpperCase() === "RAW" && printData[i].format && printData[i].format.toUpperCase() === "IMAGE") {
@@ -905,18 +908,18 @@ var qz = (function() {
 
             /* Converts config defaults to match previous version */
             config: function(config, dirty) {
-                if (_qz.tools.isVersion(2, 0)) {
+                if (_printlib.tools.isVersion(2, 0)) {
                     if (!dirty.rasterize) {
                         config.rasterize = true;
                     }
                 }
-                if(_qz.tools.versionCompare(2, 2) < 0) {
+                if(_printlib.tools.versionCompare(2, 2) < 0) {
                     if(config.forceRaw !== 'undefined') {
                         config.altPrinting = config.forceRaw;
                         delete config.forceRaw;
                     }
                 }
-                if(_qz.tools.versionCompare(2, 1, 2, 11) < 0) {
+                if(_printlib.tools.versionCompare(2, 1, 2, 11) < 0) {
                     if(config.spool) {
                         if(config.spool.size) {
                             config.perSpool = config.spool.size;
@@ -935,9 +938,9 @@ var qz = (function() {
             /** Compat wrapper with previous version **/
             networking: function(hostname, port, signature, signingTimestamp, mappingCallback) {
                 // Use 2.0
-                if (_qz.tools.isVersion(2, 0)) {
-                    return _qz.tools.promise(function(resolve, reject) {
-                        _qz.websocket.dataPromise('websocket.getNetworkInfo', {
+                if (_printlib.tools.isVersion(2, 0)) {
+                    return _printlib.tools.promise(function(resolve, reject) {
+                        _printlib.websocket.dataPromise('websocket.getNetworkInfo', {
                             hostname: hostname,
                             port: port
                         }, signature, signingTimestamp).then(function(data) {
@@ -950,8 +953,8 @@ var qz = (function() {
                     });
                 }
                 // Wrap 2.1
-                return _qz.tools.promise(function(resolve, reject) {
-                    _qz.websocket.dataPromise('networking.device', {
+                return _printlib.tools.promise(function(resolve, reject) {
+                    _printlib.websocket.dataPromise('networking.device', {
                         hostname: hostname,
                         port: port
                     }, signature, signingTimestamp).then(function(data) {
@@ -960,14 +963,14 @@ var qz = (function() {
                 });
             },
 
-            /** Check if QZ version supports chosen algorithm */
+            /** Check if connected QZ Tray version supports chosen algorithm */
             algorithm: function(quiet) {
                 //if not connected yet we will assume compatibility exists for the time being
                 //check semver to guard race condition for pending connections
-                if (_qz.tools.isActive() && _qz.websocket.connection.semver) {
-                    if (_qz.tools.isVersion(2, 0)) {
+                if (_printlib.tools.isActive() && _printlib.websocket.connection.semver) {
+                    if (_printlib.tools.isVersion(2, 0)) {
                         if (!quiet) {
-                            _qz.log.warn("Connected to an older version of QZ, alternate signature algorithms are not supported");
+                            _printlib.log.warn("Connected to an older version of QZ Tray, alternate signature algorithms are not supported");
                         }
                         return false;
                     }
@@ -985,7 +988,7 @@ var qz = (function() {
             //@formatter:off - keep this block compact
             hash: function(msg) {
                 // add trailing '1' bit (+ 0's padding) to string [§5.1.1]
-                msg = _qz.SHA._utf8Encode(msg) + String.fromCharCode(0x80);
+                msg = _printlib.SHA._utf8Encode(msg) + String.fromCharCode(0x80);
 
                 // constants [§4.2.2]
                 var K = [
@@ -1025,13 +1028,13 @@ var qz = (function() {
                 for(var i = 0; i < N; i++) {
                     // 1 - prepare message schedule 'W'
                     for(var t = 0; t < 16; t++) { W[t] = M[i][t]; }
-                    for(var t = 16; t < 64; t++) { W[t] = (_qz.SHA._dev1(W[t-2]) + W[t-7] + _qz.SHA._dev0(W[t-15]) + W[t-16]) & 0xffffffff; }
+                    for(var t = 16; t < 64; t++) { W[t] = (_printlib.SHA._dev1(W[t-2]) + W[t-7] + _printlib.SHA._dev0(W[t-15]) + W[t-16]) & 0xffffffff; }
                     // 2 - initialise working variables a, b, c, d, e, f, g, h with previous hash value
                     a = H[0]; b = H[1]; c = H[2]; d = H[3]; e = H[4]; f = H[5]; g = H[6]; h = H[7];
                     // 3 - main loop (note 'addition modulo 2^32')
                     for(var t = 0; t < 64; t++) {
-                        var T1 = h + _qz.SHA._sig1(e) + _qz.SHA._ch(e, f, g) + K[t] + W[t];
-                        var T2 = _qz.SHA._sig0(a) + _qz.SHA._maj(a, b, c);
+                        var T1 = h + _printlib.SHA._sig1(e) + _printlib.SHA._ch(e, f, g) + K[t] + W[t];
+                        var T2 = _printlib.SHA._sig0(a) + _printlib.SHA._maj(a, b, c);
                         h = g; g = f; f = e; e = (d + T1) & 0xffffffff;
                         d = c; c = b; b = a; a = (T1 + T2) & 0xffffffff;
                     }
@@ -1040,17 +1043,17 @@ var qz = (function() {
                     H[4] = (H[4]+e) & 0xffffffff; H[5] = (H[5]+f) & 0xffffffff; H[6] = (H[6]+g) & 0xffffffff; H[7] = (H[7]+h) & 0xffffffff;
                 }
 
-                return _qz.SHA._hexStr(H[0]) + _qz.SHA._hexStr(H[1]) + _qz.SHA._hexStr(H[2]) + _qz.SHA._hexStr(H[3]) +
-                    _qz.SHA._hexStr(H[4]) + _qz.SHA._hexStr(H[5]) + _qz.SHA._hexStr(H[6]) + _qz.SHA._hexStr(H[7]);
+                return _printlib.SHA._hexStr(H[0]) + _printlib.SHA._hexStr(H[1]) + _printlib.SHA._hexStr(H[2]) + _printlib.SHA._hexStr(H[3]) +
+                    _printlib.SHA._hexStr(H[4]) + _printlib.SHA._hexStr(H[5]) + _printlib.SHA._hexStr(H[6]) + _printlib.SHA._hexStr(H[7]);
             },
 
             // Rotates right (circular right shift) value x by n positions
             _rotr: function(n, x) { return (x >>> n) | (x << (32 - n)); },
             // logical functions
-            _sig0: function(x) { return _qz.SHA._rotr(2, x) ^ _qz.SHA._rotr(13, x) ^ _qz.SHA._rotr(22, x); },
-            _sig1: function(x) { return _qz.SHA._rotr(6, x) ^ _qz.SHA._rotr(11, x) ^ _qz.SHA._rotr(25, x); },
-            _dev0: function(x) { return _qz.SHA._rotr(7, x) ^ _qz.SHA._rotr(18, x) ^ (x >>> 3); },
-            _dev1: function(x) { return _qz.SHA._rotr(17, x) ^ _qz.SHA._rotr(19, x) ^ (x >>> 10); },
+            _sig0: function(x) { return _printlib.SHA._rotr(2, x) ^ _printlib.SHA._rotr(13, x) ^ _printlib.SHA._rotr(22, x); },
+            _sig1: function(x) { return _printlib.SHA._rotr(6, x) ^ _printlib.SHA._rotr(11, x) ^ _printlib.SHA._rotr(25, x); },
+            _dev0: function(x) { return _printlib.SHA._rotr(7, x) ^ _printlib.SHA._rotr(18, x) ^ (x >>> 3); },
+            _dev1: function(x) { return _printlib.SHA._rotr(17, x) ^ _printlib.SHA._rotr(19, x) ^ (x >>> 10); },
             _ch: function(x, y, z) { return (x & y) ^ (~x & z); },
             _maj: function(x, y, z) { return (x & y) ^ (x & z) ^ (y & z); },
             // note can't use toString(16) as it is implementation-dependant, and in IE returns signed numbers when used on full words
@@ -1067,7 +1070,7 @@ var qz = (function() {
                 });
             },
             _utf8Encode: function(str) {
-                return _qz.SHA._unescape(encodeURIComponent(str));
+                return _printlib.SHA._unescape(encodeURIComponent(str));
             }
             //@formatter:on
         },
@@ -1079,7 +1082,7 @@ var qz = (function() {
     /** Object to handle configured printer options. */
     function Config(printer, opts) {
 
-        this.config = _qz.tools.extend({}, _qz.printing.defaultConfig); //create a copy of the default options
+        this.config = _printlib.tools.extend({}, _printlib.printing.defaultConfig); //create a copy of the default options
         this._dirtyOpts = {}; //track which config options have changed from the defaults
 
         /**
@@ -1106,9 +1109,9 @@ var qz = (function() {
 
         /**
          * Alter any of the printer options currently applied to this config.
-         * @param newOpts {Object} The options to change. See <code>qz.configs.setDefaults</code> docs for available values.
+         * @param newOpts {Object} The options to change. See <code>printlib.configs.setDefaults</code> docs for available values.
          *
-         * @see qz.configs.setDefaults
+         * @see printlib.configs.setDefaults
          */
         this.reconfigure = function(newOpts) {
             for(var key in newOpts) {
@@ -1117,14 +1120,14 @@ var qz = (function() {
                 }
             }
 
-            _qz.tools.extend(this.config, newOpts);
+            _printlib.tools.extend(this.config, newOpts);
         };
 
         /**
          * @returns {Object} The currently applied options on this config.
          */
         this.getOptions = function() {
-            return _qz.compatible.config(this.config, this._dirtyOpts);
+            return _printlib.compatible.config(this.config, this._dirtyOpts);
         };
 
         // init calls for new config object
@@ -1133,47 +1136,47 @@ var qz = (function() {
     }
 
     /**
-     * Shortcut method for calling <code>qz.print</code> with a particular config.
-     * @param {Array<Object|string>} data Array of data being sent to the printer. See <code>qz.print</code> docs for available values.
+     * Shortcut method for calling <code>printlib.print</code> with a particular config.
+     * @param {Array<Object|string>} data Array of data being sent to the printer. See <code>printlib.print</code> docs for available values.
      * @param {boolean} [signature] Pre-signed signature of JSON string containing <code>call</code>, <code>params</code>, and <code>timestamp</code>.
      * @param {number} [signingTimestamp] Required with <code>signature</code>. Timestamp used with pre-signed content.
      *
      * @example
-     * qz.print(myConfig, ...); // OR
+     * printlib.print(myConfig, ...); // OR
      * myConfig.print(...);
      *
-     * @see qz.print
+     * @see printlib.print
      */
     Config.prototype.print = function(data, signature, signingTimestamp) {
-        qz.print(this, data, signature, signingTimestamp);
+        printlib.print(this, data, signature, signingTimestamp);
     };
 
 
 ///// PUBLIC METHODS /////
 
-    /** @namespace qz */
-    var qz = {
+    /** @namespace printlib */
+    var printlib = {
 
         /**
          * Calls related specifically to the web socket connection.
-         * @namespace qz.websocket
+         * @namespace printlib.websocket
          */
         websocket: {
             /**
              * Check connection status. Active connection is necessary for other calls to run.
              *
-             * @returns {boolean} If there is an active connection with QZ Tray.
+             * @returns {boolean} If there is an active connection with PrintLib.
              *
              * @see connect
              *
-             * @memberof  qz.websocket
+             * @memberof  printlib.websocket
              */
             isActive: function() {
-                return _qz.tools.isActive();
+                return _printlib.tools.isActive();
             },
 
             /**
-             * Call to setup connection with QZ Tray on user's system.
+             * Call to setup connection with PrintLib on user's system.
              *
              * @param {Object} [options] Configuration options for the web socket connection.
              *  @param {string|Array<string>} [options.host=['localhost', 'localhost.qz.io']] Host running the QZ Tray software.
@@ -1187,29 +1190,29 @@ var qz = (function() {
              *
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.websocket
+             * @memberof printlib.websocket
              */
             connect: function(options) {
-                return _qz.tools.promise(function(resolve, reject) {
-                    if (_qz.websocket.connection) {
-                        const state = _qz.websocket.connection.readyState;
+                return _printlib.tools.promise(function(resolve, reject) {
+                    if (_printlib.websocket.connection) {
+                        const state = _printlib.websocket.connection.readyState;
 
-                        if (state === _qz.tools.ws.OPEN) {
-                            reject(new Error("An open connection with QZ Tray already exists"));
+                        if (state === _printlib.tools.ws.OPEN) {
+                            reject(new Error("An open connection already exists"));
                             return;
-                        } else if (state === _qz.tools.ws.CONNECTING) {
+                        } else if (state === _printlib.tools.ws.CONNECTING) {
                             reject(new Error("The current connection attempt has not returned yet"));
                             return;
-                        } else if (state === _qz.tools.ws.CLOSING) {
+                        } else if (state === _printlib.tools.ws.CLOSING) {
                             reject(new Error("Waiting for previous disconnect request to complete"));
                             return;
                         }
                     }
 
-                    if (!_qz.tools.ws) {
+                    if (!_printlib.tools.ws) {
                         reject(new Error("WebSocket not supported by this browser"));
                         return;
-                    } else if (!_qz.tools.ws.CLOSED || _qz.tools.ws.CLOSED == 2) {
+                    } else if (!_printlib.tools.ws.CLOSED || _printlib.tools.ws.CLOSED == 2) {
                         reject(new Error("Unsupported WebSocket version detected: HyBi-00/Hixie-76"));
                         return;
                     }
@@ -1221,7 +1224,7 @@ var qz = (function() {
                     if (typeof location === 'undefined' || location.protocol !== 'https:') {
                         //respect forcing secure ports if it is defined, otherwise disable
                         if (typeof options.usingSecure === 'undefined') {
-                            _qz.log.trace("Disabling secure ports due to insecure page");
+                            _printlib.log.trace("Disabling secure ports due to insecure page");
                             options.usingSecure = false;
                         }
                     }
@@ -1231,7 +1234,7 @@ var qz = (function() {
                         options.host = [options.host];
                     }
 
-                    _qz.websocket.shutdown = false; //reset state for new connection attempt
+                    _printlib.websocket.shutdown = false; //reset state for new connection attempt
                     var attempt = function(count) {
                         var tried = false;
                         var nextAttempt = function() {
@@ -1241,15 +1244,15 @@ var qz = (function() {
                                 if (options && count < options.retries) {
                                     attempt(count + 1);
                                 } else {
-                                    _qz.websocket.connection = null;
+                                    _printlib.websocket.connection = null;
                                     reject.apply(null, arguments);
                                 }
                             }
                         };
 
                         var delayed = function() {
-                            var config = _qz.tools.extend({}, _qz.websocket.connectConfig, options);
-                            _qz.websocket.setup.findConnection(config, resolve, nextAttempt)
+                            var config = _printlib.tools.extend({}, _printlib.websocket.connectConfig, options);
+                            _printlib.websocket.setup.findConnection(config, resolve, nextAttempt)
                         };
                         if (count == 0) {
                             delayed(); // only retries will be called with a delay
@@ -1263,25 +1266,25 @@ var qz = (function() {
             },
 
             /**
-             * Stop any active connection with QZ Tray.
+             * Stop any active connection with PrintLib.
              *
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.websocket
+             * @memberof printlib.websocket
              */
             disconnect: function() {
-                return _qz.tools.promise(function(resolve, reject) {
-                    if (_qz.websocket.connection != null) {
-                        if (_qz.tools.isActive()) {
+                return _printlib.tools.promise(function(resolve, reject) {
+                    if (_printlib.websocket.connection != null) {
+                        if (_printlib.tools.isActive()) {
                             // handles closing both 'connecting' and 'connected' states
-                            _qz.websocket.shutdown = true;
-                            _qz.websocket.connection.promise = { resolve: resolve, reject: reject };
-                            _qz.websocket.connection.close();
+                            _printlib.websocket.shutdown = true;
+                            _printlib.websocket.connection.promise = { resolve: resolve, reject: reject };
+                            _printlib.websocket.connection.close();
                         } else {
                             reject(new Error("Current connection is still closing"));
                         }
                     } else {
-                        reject(new Error("No open connection with QZ Tray"));
+                        reject(new Error("No open connection with PrintLib"));
                     }
                 });
             },
@@ -1292,10 +1295,10 @@ var qz = (function() {
              *
              * @param {Function|Array<Function>} calls Single or array of <code>Function({Event} event)</code> calls.
              *
-             * @memberof qz.websocket
+             * @memberof printlib.websocket
              */
             setErrorCallbacks: function(calls) {
-                _qz.websocket.errorCallbacks = calls;
+                _printlib.websocket.errorCallbacks = calls;
             },
 
             /**
@@ -1304,14 +1307,14 @@ var qz = (function() {
              *
              * @param {Function|Array<Function>} calls Single or array of <code>Function({Event} event)</code> calls.
              *
-             * @memberof qz.websocket
+             * @memberof printlib.websocket
              */
             setClosedCallbacks: function(calls) {
-                _qz.websocket.closedCallbacks = calls;
+                _printlib.websocket.closedCallbacks = calls;
             },
 
             /**
-             * @deprecated Since 2.1.0.  Please use qz.networking.device() instead
+             * @deprecated Since 2.1.0.  Please use printlib.networking.device() instead
              *
              * @param {string} [hostname] Hostname to try to connect to when determining network interfaces, defaults to "google.com"
              * @param {number} [port] Port to use with custom hostname, defaults to 443
@@ -1320,18 +1323,18 @@ var qz = (function() {
              *
              * @returns {Promise<Object<{ipAddress: string, macAddress: string}>|Error>} Connected system's network information.
              *
-             * @memberof qz.websocket
+             * @memberof printlib.websocket
              */
-            getNetworkInfo: _qz.compatible.networking,
+            getNetworkInfo: _printlib.compatible.networking,
 
             /**
              * @returns {Object<{socket: String, host: String, port: Number}>} Details of active websocket connection
              *
-             * @memberof qz.websocket
+             * @memberof printlib.websocket
              */
             getConnectionInfo: function() {
-                if (_qz.tools.assertActive()) {
-                    var url = _qz.websocket.connection.url.split(/[:\/]+/g);
+                if (_printlib.tools.assertActive()) {
+                    var url = _printlib.websocket.connection.url.split(/[:\/]+/g);
                     return { socket: url[0], host: url[1], port: +url[2] };
                 }
             }
@@ -1340,7 +1343,7 @@ var qz = (function() {
 
         /**
          * Calls related to getting printer information from the connection.
-         * @namespace qz.printers
+         * @namespace printlib.printers
          */
         printers: {
             /**
@@ -1349,10 +1352,10 @@ var qz = (function() {
              *
              * @returns {Promise<string|Error>} Name of the connected system's default printer.
              *
-             * @memberof qz.printers
+             * @memberof printlib.printers
              */
             getDefault: function(signature, signingTimestamp) {
-                return _qz.websocket.dataPromise('printers.getDefault', null, signature, signingTimestamp);
+                return _printlib.websocket.dataPromise('printers.getDefault', null, signature, signingTimestamp);
             },
 
             /**
@@ -1363,21 +1366,21 @@ var qz = (function() {
              * @returns {Promise<Array<string>|string|Error>} The matched printer name if <code>query</code> is provided.
              *                                                Otherwise an array of printer names found on the connected system.
              *
-             * @memberof qz.printers
+             * @memberof printlib.printers
              */
             find: function(query, signature, signingTimestamp) {
-                return _qz.websocket.dataPromise('printers.find', { query: query }, signature, signingTimestamp);
+                return _printlib.websocket.dataPromise('printers.find', { query: query }, signature, signingTimestamp);
             },
 
             /**
-             * Provides a list, with additional information, for each printer available to QZ.
+             * Provides a list, with additional information, for each printer available to PrintLib.
              *
              * @returns {Promise<Array<Object>|Object|Error>}
              *
-             * @memberof qz.printers
+             * @memberof printlib.printers
              */
             details: function() {
-                return _qz.websocket.dataPromise('printers.detail');
+                return _printlib.websocket.dataPromise('printers.detail');
             },
 
             /**
@@ -1387,7 +1390,7 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.1.0
              *
-             * @see qz.printers.setPrinterCallbacks
+             * @see printlib.printers.setPrinterCallbacks
              *
              * @param {null|string|Array<string>} printers Printer or list of printers to listen to, null listens to all.
              * @param {Object|null} [options] Printer listener options
@@ -1395,7 +1398,7 @@ var qz = (function() {
              *  @param {null|number} [options.maxJobData=-1] Maximum number of bytes to returns for raw spooled file content (Windows only)
              *  @param {null|string} [options.flavor="plain"] Flavor of data format returned. Valid flavors are <code>[base64 | hex | plain*]</code> (Windows only)
              *
-             * @memberof qz.printers
+             * @memberof printlib.printers
              */
             startListening: function(printers, options) {
                 if (!Array.isArray(printers)) {
@@ -1407,7 +1410,7 @@ var qz = (function() {
                 if (options && options.jobData == true) params.jobData = true;
                 if (options && options.maxJobData) params.maxJobData = options.maxJobData;
                 if (options && options.flavor) params.flavor = options.flavor;
-                return _qz.websocket.dataPromise('printers.startListening', params);
+                return _printlib.websocket.dataPromise('printers.startListening', params);
             },
 
             /**
@@ -1420,7 +1423,7 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.2.4
              *
-             * @memberof qz.printers
+             * @memberof printlib.printers
              */
             clearQueue: function(options) {
                 if (typeof options !== 'object') {
@@ -1428,7 +1431,7 @@ var qz = (function() {
                         printerName: options
                     };
                 }
-                return _qz.websocket.dataPromise('printers.clearQueue', options);
+                return _printlib.websocket.dataPromise('printers.clearQueue', options);
             },
 
             /**
@@ -1437,12 +1440,12 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.1.0
              *
-             * @see qz.printers.setPrinterCallbacks
+             * @see printlib.printers.setPrinterCallbacks
              *
-             * @memberof qz.printers
+             * @memberof printlib.printers
              */
             stopListening: function() {
-                return _qz.websocket.dataPromise('printers.stopListening');
+                return _printlib.websocket.dataPromise('printers.stopListening');
             },
 
             /**
@@ -1451,12 +1454,12 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.1.0
              *
-             * @see qz.printers.startListening
+             * @see printlib.printers.startListening
              *
-             * @memberof qz.printers
+             * @memberof printlib.printers
              */
             getStatus: function() {
-                return _qz.websocket.dataPromise('printers.getStatus');
+                return _printlib.websocket.dataPromise('printers.getStatus');
             },
 
             /**
@@ -1469,16 +1472,16 @@ var qz = (function() {
              * @param {Function|Array<Function>} calls Single or array of <code>Function({Object} eventData)</code> calls.
              * @since 2.1.0
              *
-             * @memberof qz.printers
+             * @memberof printlib.printers
              */
             setPrinterCallbacks: function(calls) {
-                _qz.printers.printerCallbacks = calls;
+                _printlib.printers.printerCallbacks = calls;
             }
         },
 
         /**
          * Calls related to setting up new printer configurations.
-         * @namespace qz.configs
+         * @namespace printlib.configs
          */
         configs: {
             /**
@@ -1534,10 +1537,10 @@ var qz = (function() {
              *   @param {number} [options.spool.size=null] Number of pages per spool.  Default is no limit.  If <code>spool.end</code> is provided, defaults to <code>1</code>
              *   @param {string} [options.spool.end=null] Raw only: Character(s) denoting end of a page to control spooling.
              *
-             * @memberof qz.configs
+             * @memberof printlib.configs
              */
             setDefaults: function(options) {
-                _qz.tools.extend(_qz.printing.defaultConfig, options);
+                _printlib.tools.extend(_printlib.printing.defaultConfig, options);
             },
 
             /**
@@ -1554,7 +1557,7 @@ var qz = (function() {
              *
              * @see configs.setDefaults
              *
-             * @memberof qz.configs
+             * @memberof printlib.configs
              */
             create: function(printer, options) {
                 return new Config(printer, options);
@@ -1609,9 +1612,9 @@ var qz = (function() {
          *
          * @returns {Promise<null|Error>}
          *
-         * @see qz.configs.create
+         * @see printlib.configs.create
          *
-         * @memberof qz
+         * @memberof printlib
          */
         print: function(configs, data) {
             var resumeOnError = false,
@@ -1642,8 +1645,8 @@ var qz = (function() {
 
             //clean up data formatting
             for(var d = 0; d < data.length; d++) {
-                _qz.tools.relative(data[d]);
-                _qz.compatible.data(data[d]);
+                _printlib.tools.relative(data[d]);
+                _printlib.compatible.data(data[d]);
             }
 
             var sendToPrint = function(mapping) {
@@ -1653,7 +1656,7 @@ var qz = (function() {
                     data: mapping.data
                 };
 
-                return _qz.websocket.dataPromise('print', params, mapping.signature, mapping.timestamp);
+                return _printlib.websocket.dataPromise('print', params, mapping.signature, mapping.timestamp);
             };
 
             //chain instead of Promise.all, so resumeOnError can collect each error
@@ -1679,7 +1682,7 @@ var qz = (function() {
 
                 //final promise to reject any errors as a group
                 chain.push(function() {
-                    return _qz.tools.promise(function(resolve, reject) {
+                    return _printlib.tools.promise(function(resolve, reject) {
                         fallen.length ? reject(fallen) : resolve();
                     });
                 });
@@ -1689,7 +1692,7 @@ var qz = (function() {
             chain.reduce(function(sequence, link) {
                 last = sequence.catch(fallThrough).then(link); //catch is ignored if fallThrough is null
                 return last;
-            }, _qz.tools.promise(function(r) { r(); })); //an immediately resolved promise to start off the chain
+            }, _printlib.tools.promise(function(r) { r(); })); //an immediately resolved promise to start off the chain
 
             //return last promise so users can chain off final action or catch when stopping on error
             return last;
@@ -1698,16 +1701,16 @@ var qz = (function() {
 
         /**
          * Calls related to interaction with serial ports.
-         * @namespace qz.serial
+         * @namespace printlib.serial
          */
         serial: {
             /**
              * @returns {Promise<Array<string>|Error>} Communication (RS232, COM, TTY) ports available on connected system.
              *
-             * @memberof qz.serial
+             * @memberof printlib.serial
              */
             findPorts: function() {
-                return _qz.websocket.dataPromise('serial.findPorts');
+                return _printlib.websocket.dataPromise('serial.findPorts');
             },
 
             /**
@@ -1718,10 +1721,10 @@ var qz = (function() {
              *
              * @param {Function|Array<Function>} calls Single or array of <code>Function({object} streamEvent)</code> calls.
              *
-             * @memberof qz.serial
+             * @memberof printlib.serial
              */
             setSerialCallbacks: function(calls) {
-                _qz.serial.serialCallbacks = calls;
+                _printlib.serial.serialCallbacks = calls;
             },
 
             /**
@@ -1755,14 +1758,14 @@ var qz = (function() {
              *
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.serial
+             * @memberof printlib.serial
              */
             openPort: function(port, options) {
                 var params = {
                     port: port,
                     options: options
                 };
-                return _qz.websocket.dataPromise('serial.openPort', params);
+                return _printlib.websocket.dataPromise('serial.openPort', params);
             },
 
             /**
@@ -1773,17 +1776,17 @@ var qz = (function() {
              * @param {string|Array<string>|Object} data Data to be sent to the serial device.
              *  @param {string} [data.type='PLAIN'] Valid values <code>[FILE | PLAIN | HEX | BASE64]</code>
              *  @param {string|Array<string>} data.data Data to be sent to the serial device.
-             * @param {Object} options Serial port configuration updates. See <code>qz.serial.openPort</code> `options` docs for available values.
+             * @param {Object} options Serial port configuration updates. See <code>printlib.serial.openPort</code> `options` docs for available values.
              *     For best performance, it is recommended to only set these values on the port open call.
              *
              * @returns {Promise<null|Error>}
              *
-             * @see qz.serial.setSerialCallbacks
+             * @see printlib.serial.setSerialCallbacks
              *
-             * @memberof qz.serial
+             * @memberof printlib.serial
              */
             sendData: function(port, data, options) {
-                if (_qz.tools.versionCompare(2, 1, 0, 12) >= 0) {
+                if (_printlib.tools.versionCompare(2, 1, 0, 12) >= 0) {
                     if (typeof data !== 'object') {
                         data = {
                             data: data,
@@ -1792,7 +1795,7 @@ var qz = (function() {
                     }
 
                     if (data.type && data.type.toUpperCase() == "FILE") {
-                        data.data = _qz.tools.absolute(data.data);
+                        data.data = _printlib.tools.absolute(data.data);
                     }
                 }
 
@@ -1801,7 +1804,7 @@ var qz = (function() {
                     data: data,
                     options: options
                 };
-                return _qz.websocket.dataPromise('serial.sendData', params);
+                return _printlib.websocket.dataPromise('serial.sendData', params);
             },
 
             /**
@@ -1809,16 +1812,16 @@ var qz = (function() {
              *
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.serial
+             * @memberof printlib.serial
              */
             closePort: function(port) {
-                return _qz.websocket.dataPromise('serial.closePort', { port: port });
+                return _printlib.websocket.dataPromise('serial.closePort', { port: port });
             }
         },
 
         /**
          * Calls related to interaction with communication sockets.
-         * @namespace qz.socket
+         * @namespace printlib.socket
          */
         socket: {
             /**
@@ -1829,7 +1832,7 @@ var qz = (function() {
              * @param {Object} [options] Network socket configuration.
              *  @param {string} [options.encoding='UTF-8'] Character set for communications.
              *
-             * @memberof qz.socket
+             * @memberof printlib.socket
              */
             open: function(host, port, options) {
                 var params = {
@@ -1837,21 +1840,21 @@ var qz = (function() {
                     port: port,
                     options: options
                 };
-                return _qz.websocket.dataPromise("socket.open", params);
+                return _printlib.websocket.dataPromise("socket.open", params);
             },
 
             /**
              * @param {string} host The connection hostname.
              * @param {number} port The connection port number.
              *
-             * @memberof qz.socket
+             * @memberof printlib.socket
              */
             close: function(host, port) {
                 var params = {
                     host: host,
                     port: port
                 };
-                return _qz.websocket.dataPromise("socket.close", params);
+                return _printlib.websocket.dataPromise("socket.close", params);
             },
 
             /**
@@ -1863,7 +1866,7 @@ var qz = (function() {
              *  @param {string} [data.type='PLAIN'] Valid values <code>[PLAIN]</code>
              *  @param {string} data.data Data to be sent over the port.
              *
-             * @memberof qz.socket
+             * @memberof printlib.socket
              */
             sendData: function(host, port, data) {
                 if (typeof data !== 'object') {
@@ -1878,7 +1881,7 @@ var qz = (function() {
                     port: port,
                     data: data
                 };
-                return _qz.websocket.dataPromise("socket.sendData", params);
+                return _printlib.websocket.dataPromise("socket.sendData", params);
             },
 
             /**
@@ -1889,16 +1892,16 @@ var qz = (function() {
              *
              * @param {Function|Array<Function>} calls Single or array of <code>Function({Object} eventData)</code> calls.
              *
-             * @memberof qz.socket
+             * @memberof printlib.socket
              */
             setSocketCallbacks: function(calls) {
-                _qz.socket.socketCallbacks = calls;
+                _printlib.socket.socketCallbacks = calls;
             }
         },
 
         /**
          * Calls related to interaction with USB devices.
-         * @namespace qz.usb
+         * @namespace printlib.usb
          */
         usb: {
             /**
@@ -1908,10 +1911,10 @@ var qz = (function() {
              * @param includeHubs Whether to include USB hubs.
              * @returns {Promise<Array<Object>|Error>} Array of JSON objects containing information on connected USB devices.
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             listDevices: function(includeHubs) {
-                return _qz.websocket.dataPromise('usb.listDevices', { includeHubs: includeHubs });
+                return _printlib.websocket.dataPromise('usb.listDevices', { includeHubs: includeHubs });
             },
 
             /**
@@ -1920,12 +1923,12 @@ var qz = (function() {
              *  @param deviceInfo.productId Hex string of USB device's product ID.
              * @returns {Promise<Array<string>|Error>} List of available (hexadecimal) interfaces on a USB device.
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             listInterfaces: function(deviceInfo) {
                 if (typeof deviceInfo !== 'object') { deviceInfo = { vendorId: arguments[0], productId: arguments[1] }; } //backwards compatibility
 
-                return _qz.websocket.dataPromise('usb.listInterfaces', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.listInterfaces', deviceInfo);
             },
 
             /**
@@ -1935,7 +1938,7 @@ var qz = (function() {
              *  @param deviceInfo.iface Hex string of interface on the USB device to search.
              * @returns {Promise<Array<string>|Error>} List of available (hexadecimal) endpoints on a USB device's interface.
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             listEndpoints: function(deviceInfo) {
                 //backwards compatibility
@@ -1947,7 +1950,7 @@ var qz = (function() {
                     };
                 }
 
-                return _qz.websocket.dataPromise('usb.listEndpoints', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.listEndpoints', deviceInfo);
             },
 
             /**
@@ -1958,10 +1961,10 @@ var qz = (function() {
              *
              * @param {Function|Array<Function>} calls Single or array of <code>Function({Object} eventData)</code> calls.
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             setUsbCallbacks: function(calls) {
-                _qz.usb.usbCallbacks = calls;
+                _printlib.usb.usbCallbacks = calls;
             },
 
             /**
@@ -1973,7 +1976,7 @@ var qz = (function() {
              *  @param deviceInfo.interface Hex string of interface on the USB device to claim.
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             claimDevice: function(deviceInfo) {
                 //backwards compatibility
@@ -1985,7 +1988,7 @@ var qz = (function() {
                     };
                 }
 
-                return _qz.websocket.dataPromise('usb.claimDevice', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.claimDevice', deviceInfo);
             },
 
             /**
@@ -1997,12 +2000,12 @@ var qz = (function() {
              * @returns {Promise<boolean|Error>}
              *
              * @since 2.0.2
-             * @memberOf qz.usb
+             * @memberOf printlib.usb
              */
             isClaimed: function(deviceInfo) {
                 if (typeof deviceInfo !== 'object') { deviceInfo = { vendorId: arguments[0], productId: arguments[1] }; } //backwards compatibility
 
-                return _qz.websocket.dataPromise('usb.isClaimed', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.isClaimed', deviceInfo);
             },
 
             /**
@@ -2016,7 +2019,7 @@ var qz = (function() {
              *  @param {string} [deviceInfo.type='PLAIN'] Valid values <code>[FILE | PLAIN | HEX | BASE64]</code>
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             sendData: function(deviceInfo) {
                 //backwards compatibility
@@ -2029,7 +2032,7 @@ var qz = (function() {
                     };
                 }
 
-                if (_qz.tools.versionCompare(2, 1, 0, 12) >= 0) {
+                if (_printlib.tools.versionCompare(2, 1, 0, 12) >= 0) {
                     if (typeof deviceInfo.data !== 'object') {
                         deviceInfo.data = {
                             data: deviceInfo.data,
@@ -2038,11 +2041,11 @@ var qz = (function() {
                     }
 
                     if (deviceInfo.data.type && deviceInfo.data.type.toUpperCase() == "FILE") {
-                        deviceInfo.data.data = _qz.tools.absolute(deviceInfo.data.data);
+                        deviceInfo.data.data = _printlib.tools.absolute(deviceInfo.data.data);
                     }
                 }
 
-                return _qz.websocket.dataPromise('usb.sendData', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.sendData', deviceInfo);
             },
 
             /**
@@ -2055,7 +2058,7 @@ var qz = (function() {
              *  @param deviceInfo.responseSize Size of the byte array to receive a response in.
              * @returns {Promise<Array<string>|Error>} List of (hexadecimal) bytes received from the USB device.
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             readData: function(deviceInfo) {
                 //backwards compatibility
@@ -2068,7 +2071,7 @@ var qz = (function() {
                     };
                 }
 
-                return _qz.websocket.dataPromise('usb.readData', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.readData', deviceInfo);
             },
 
             /**
@@ -2082,9 +2085,9 @@ var qz = (function() {
              *  @param deviceInfo.interval=100 Frequency to send read data back, in milliseconds.
              * @returns {Promise<null|Error>}
              *
-             * @see qz.usb.setUsbCallbacks
+             * @see printlib.usb.setUsbCallbacks
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             openStream: function(deviceInfo) {
                 //backwards compatibility
@@ -2098,7 +2101,7 @@ var qz = (function() {
                     };
                 }
 
-                return _qz.websocket.dataPromise('usb.openStream', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.openStream', deviceInfo);
             },
 
             /**
@@ -2110,7 +2113,7 @@ var qz = (function() {
              *  @param deviceInfo.endpoint Hex string of endpoint on the claimed interface for the USB device.
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             closeStream: function(deviceInfo) {
                 //backwards compatibility
@@ -2122,7 +2125,7 @@ var qz = (function() {
                     };
                 }
 
-                return _qz.websocket.dataPromise('usb.closeStream', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.closeStream', deviceInfo);
             },
 
             /**
@@ -2133,21 +2136,21 @@ var qz = (function() {
              *  @param deviceInfo.productId Hex string of USB device's product ID.
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.usb
+             * @memberof printlib.usb
              */
             releaseDevice: function(deviceInfo) {
                 if (typeof deviceInfo !== 'object') { deviceInfo = { vendorId: arguments[0], productId: arguments[1] }; } //backwards compatibility
 
-                return _qz.websocket.dataPromise('usb.releaseDevice', deviceInfo);
+                return _printlib.websocket.dataPromise('usb.releaseDevice', deviceInfo);
             }
         },
 
 
         /**
          * Calls related to interaction with HID USB devices<br/>
-         * Many of these calls can be accomplished from the <code>qz.usb</code> namespace,
+         * Many of these calls can be accomplished from the <code>printlib.usb</code> namespace,
          * but HID allows for simpler interaction
-         * @namespace qz.hid
+         * @namespace printlib.hid
          * @since 2.0.1
          */
         hid: {
@@ -2158,10 +2161,10 @@ var qz = (function() {
              * @returns {Promise<Array<Object>|Error>} Array of JSON objects containing information on connected HID devices.
              * @since 2.0.1
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             listDevices: function() {
-                return _qz.websocket.dataPromise('hid.listDevices');
+                return _printlib.websocket.dataPromise('hid.listDevices');
             },
 
             /**
@@ -2171,12 +2174,12 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.0.1
              *
-             * @see qz.hid.setHidCallbacks
+             * @see printlib.hid.setHidCallbacks
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             startListening: function() {
-                return _qz.websocket.dataPromise('hid.startListening');
+                return _printlib.websocket.dataPromise('hid.startListening');
             },
 
             /**
@@ -2185,12 +2188,12 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.0.1
              *
-             * @see qz.hid.setHidCallbacks
+             * @see printlib.hid.setHidCallbacks
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             stopListening: function() {
-                return _qz.websocket.dataPromise('hid.stopListening');
+                return _printlib.websocket.dataPromise('hid.stopListening');
             },
 
             /**
@@ -2203,10 +2206,10 @@ var qz = (function() {
              * @param {Function|Array<Function>} calls Single or array of <code>Function({Object} eventData)</code> calls.
              * @since 2.0.1
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             setHidCallbacks: function(calls) {
-                _qz.hid.hidCallbacks = calls;
+                _printlib.hid.hidCallbacks = calls;
             },
 
             /**
@@ -2220,12 +2223,12 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.0.1
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             claimDevice: function(deviceInfo) {
                 if (typeof deviceInfo !== 'object') { deviceInfo = { vendorId: arguments[0], productId: arguments[1] }; } //backwards compatibility
 
-                return _qz.websocket.dataPromise('hid.claimDevice', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.claimDevice', deviceInfo);
             },
 
             /**
@@ -2239,12 +2242,12 @@ var qz = (function() {
              * @returns {Promise<boolean|Error>}
              *
              * @since 2.0.2
-             * @memberOf qz.hid
+             * @memberOf printlib.hid
              */
             isClaimed: function(deviceInfo) {
                 if (typeof deviceInfo !== 'object') { deviceInfo = { vendorId: arguments[0], productId: arguments[1] }; } //backwards compatibility
 
-                return _qz.websocket.dataPromise('hid.isClaimed', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.isClaimed', deviceInfo);
             },
 
             /**
@@ -2263,7 +2266,7 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.0.1
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             sendData: function(deviceInfo) {
                 //backwards compatibility
@@ -2276,7 +2279,7 @@ var qz = (function() {
                     };
                 }
 
-                if (_qz.tools.versionCompare(2, 1, 0, 12) >= 0) {
+                if (_printlib.tools.versionCompare(2, 1, 0, 12) >= 0) {
                     if (typeof deviceInfo.data !== 'object') {
                         deviceInfo.data = {
                             data: deviceInfo.data,
@@ -2285,20 +2288,20 @@ var qz = (function() {
                     }
 
                     if (deviceInfo.data.type && deviceInfo.data.type.toUpperCase() == "FILE") {
-                        deviceInfo.data.data = _qz.tools.absolute(deviceInfo.data.data);
+                        deviceInfo.data.data = _printlib.tools.absolute(deviceInfo.data.data);
                     }
                 } else {
                     if (typeof deviceInfo.data === 'object') {
                         if (deviceInfo.data.type.toUpperCase() !== "PLAIN"
                             || typeof deviceInfo.data.data !== "string") {
-                            return _qz.tools.reject(new Error("Data format is not supported with connected QZ Tray version " + _qz.websocket.connection.version));
+                            return _printlib.tools.reject(new Error("Data format is not supported with connected QZ Tray version " + _printlib.websocket.connection.version));
                         }
 
                         deviceInfo.data = deviceInfo.data.data;
                     }
                 }
 
-                return _qz.websocket.dataPromise('hid.sendData', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.sendData', deviceInfo);
             },
 
             /**
@@ -2313,7 +2316,7 @@ var qz = (function() {
              * @returns {Promise<Array<string>|Error>} List of (hexadecimal) bytes received from the HID device.
              * @since 2.0.1
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             readData: function(deviceInfo) {
                 //backwards compatibility
@@ -2325,7 +2328,7 @@ var qz = (function() {
                     };
                 }
 
-                return _qz.websocket.dataPromise('hid.readData', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.readData', deviceInfo);
             },
 
             /**
@@ -2343,10 +2346,10 @@ var qz = (function() {
              *  @param {string} [deviceInfo.type='PLAIN'] Valid values <code>[FILE | PLAIN | HEX | BASE64]</code>
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             sendFeatureReport: function(deviceInfo) {
-                return _qz.websocket.dataPromise('hid.sendFeatureReport', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.sendFeatureReport', deviceInfo);
             },
 
             /**
@@ -2360,10 +2363,10 @@ var qz = (function() {
              *  @param deviceInfo.responseSize Size of the byte array to receive a response in.
              * @returns {Promise<Array<string>|Error>} List of (hexadecimal) bytes received from the HID device.
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             getFeatureReport: function(deviceInfo) {
-                return _qz.websocket.dataPromise('hid.getFeatureReport', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.getFeatureReport', deviceInfo);
             },
 
             /**
@@ -2379,9 +2382,9 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.0.1
              *
-             * @see qz.hid.setHidCallbacks
+             * @see printlib.hid.setHidCallbacks
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             openStream: function(deviceInfo) {
                 //backwards compatibility
@@ -2394,7 +2397,7 @@ var qz = (function() {
                     };
                 }
 
-                return _qz.websocket.dataPromise('hid.openStream', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.openStream', deviceInfo);
             },
 
             /**
@@ -2408,12 +2411,12 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.0.1
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             closeStream: function(deviceInfo) {
                 if (typeof deviceInfo !== 'object') { deviceInfo = { vendorId: arguments[0], productId: arguments[1] }; } //backwards compatibility
 
-                return _qz.websocket.dataPromise('hid.closeStream', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.closeStream', deviceInfo);
             },
 
             /**
@@ -2427,62 +2430,62 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.0.1
              *
-             * @memberof qz.hid
+             * @memberof printlib.hid
              */
             releaseDevice: function(deviceInfo) {
                 if (typeof deviceInfo !== 'object') { deviceInfo = { vendorId: arguments[0], productId: arguments[1] }; } //backwards compatibility
 
-                return _qz.websocket.dataPromise('hid.releaseDevice', deviceInfo);
+                return _printlib.websocket.dataPromise('hid.releaseDevice', deviceInfo);
             }
         },
 
 
         /**
          * Calls related to interactions with the filesystem
-         * @namespace qz.file
+         * @namespace printlib.file
          * @since 2.1
          */
         file: {
             /**
              * List of files available at the given directory.<br/>
-             * Due to security reasons, paths are limited to the qz data directory unless overridden via properties file.
+             * Due to security reasons, paths are limited to the printlib data directory unless overridden via properties file.
              *
-             * @param {string} path Relative or absolute directory path. Must reside in qz data directory or a white-listed location.
+             * @param {string} path Relative or absolute directory path. Must reside in printlib data directory or a white-listed location.
              * @param {Object} [params] Object containing file access parameters
              *  @param {boolean} [params.sandbox=true] If relative location from root is only available to the certificate's connection, otherwise all connections
              *  @param {boolean} [params.shared=true] If relative location from root is accessible to all users on the system, otherwise just the current user
              * @returns {Promise<Array<String>|Error>} Array of files at the given path
              *
-             * @memberof qz.file
+             * @memberof printlib.file
              */
             list: function(path, params) {
-                var param = _qz.tools.extend({ path: path }, params);
-                return _qz.websocket.dataPromise('file.list', param);
+                var param = _printlib.tools.extend({ path: path }, params);
+                return _printlib.websocket.dataPromise('file.list', param);
             },
 
             /**
              * Reads contents of file at the given path.<br/>
-             * Due to security reasons, paths are limited to the qz data directory unless overridden via properties file.
+             * Due to security reasons, paths are limited to the printlib data directory unless overridden via properties file.
              *
-             * @param {string} path Relative or absolute file path. Must reside in qz data directory or a white-listed location.
+             * @param {string} path Relative or absolute file path. Must reside in printlib data directory or a white-listed location.
              * @param {Object} [params] Object containing file access parameters
              *  @param {boolean} [params.sandbox=true] If relative location from root is only available to the certificate's connection, otherwise all connections
              *  @param {boolean} [params.shared=true] If relative location from root is accessible to all users on the system, otherwise just the current user
              *  @param {string} [params.flavor='plain'] Flavor of data format used, valid flavors are <code>[base64 | hex | plain]</code>.
              * @returns {Promise<String|Error>} String containing the file contents
              *
-             * @memberof qz.file
+             * @memberof printlib.file
              */
             read: function(path, params) {
-                var param = _qz.tools.extend({ path: path }, params);
-                return _qz.websocket.dataPromise('file.read', param);
+                var param = _printlib.tools.extend({ path: path }, params);
+                return _printlib.websocket.dataPromise('file.read', param);
             },
 
             /**
              * Writes data to the file at the given path.<br/>
-             * Due to security reasons, paths are limited to the qz data directory unless overridden via properties file.
+             * Due to security reasons, paths are limited to the printlib data directory unless overridden via properties file.
              *
-             * @param {string} path Relative or absolute file path. Must reside in qz data directory or a white-listed location.
+             * @param {string} path Relative or absolute file path. Must reside in printlib data directory or a white-listed location.
              * @param {Object} params Object containing file access parameters
              *  @param {string} params.data File data to be written
              *  @param {boolean} [params.sandbox=true] If relative location from root is only available to the certificate's connection, otherwise all connections
@@ -2491,34 +2494,34 @@ var qz = (function() {
              *  @param {string} [params.flavor='plain'] Flavor of data format used, valid flavors are <code>[base64 | file | hex | plain]</code>.
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.file
+             * @memberof printlib.file
              */
             write: function(path, params) {
-                var param = _qz.tools.extend({ path: path }, params);
-                return _qz.websocket.dataPromise('file.write', param);
+                var param = _printlib.tools.extend({ path: path }, params);
+                return _printlib.websocket.dataPromise('file.write', param);
             },
 
             /**
              * Deletes a file at given path.<br/>
-             * Due to security reasons, paths are limited to the qz data directory unless overridden via properties file.
+             * Due to security reasons, paths are limited to the printlib data directory unless overridden via properties file.
              *
-             * @param {string} path Relative or absolute file path. Must reside in qz data directory or a white-listed location.
+             * @param {string} path Relative or absolute file path. Must reside in printlib data directory or a white-listed location.
              * @param {Object} [params] Object containing file access parameters
              *  @param {boolean} [params.sandbox=true] If relative location from root is only available to the certificate's connection, otherwise all connections
              *  @param {boolean} [params.shared=true] If relative location from root is accessible to all users on the system, otherwise just the current user
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.file
+             * @memberof printlib.file
              */
             remove: function(path, params) {
-                var param = _qz.tools.extend({ path: path }, params);
-                return _qz.websocket.dataPromise('file.remove', param);
+                var param = _printlib.tools.extend({ path: path }, params);
+                return _printlib.websocket.dataPromise('file.remove', param);
             },
 
             /**
              * Provides a continuous stream of events (and optionally data) from a local file.
              *
-             * @param {string} path Relative or absolute directory path. Must reside in qz data directory or a white-listed location.
+             * @param {string} path Relative or absolute directory path. Must reside in printlib data directory or a white-listed location.
              * @param {Object} [params] Object containing file access parameters
              *  @param {boolean} [params.sandbox=true] If relative location from root is only available to the certificate's connection, otherwise all connections
              *  @param {boolean} [params.shared=true] If relative location from root is accessible to all users on the system, otherwise just the current user
@@ -2532,9 +2535,9 @@ var qz = (function() {
              * @returns {Promise<null|Error>}
              * @since 2.1.0
              *
-             * @see qz.file.setFileCallbacks
+             * @see printlib.file.setFileCallbacks
              *
-             * @memberof qz.file
+             * @memberof printlib.file
              */
             startListening: function(path, params) {
                 if (params && typeof params.include !== 'undefined' && !Array.isArray(params.include)) {
@@ -2543,8 +2546,8 @@ var qz = (function() {
                 if (params && typeof params.exclude !== 'undefined' && !Array.isArray(params.exclude)) {
                     params.exclude = [params.exclude];
                 }
-                var param = _qz.tools.extend({ path: path }, params);
-                return _qz.websocket.dataPromise('file.startListening', param);
+                var param = _printlib.tools.extend({ path: path }, params);
+                return _printlib.websocket.dataPromise('file.startListening', param);
             },
 
             /**
@@ -2556,11 +2559,11 @@ var qz = (function() {
              *  @param {boolean} [params.shared=true] If relative location from root is accessible to all users on the system, otherwise just the current user
              * @returns {Promise<null|Error>}
              *
-             * @memberof qz.file
+             * @memberof printlib.file
              */
             stopListening: function(path, params) {
-                var param = _qz.tools.extend({ path: path }, params);
-                return _qz.websocket.dataPromise('file.stopListening', param);
+                var param = _printlib.tools.extend({ path: path }, params);
+                return _printlib.websocket.dataPromise('file.stopListening', param);
             },
 
             /**
@@ -2571,16 +2574,16 @@ var qz = (function() {
              * @param {Function|Array<Function>} calls Single or array of <code>Function({Object} eventData)</code> calls.
              * @since 2.1.0
              *
-             * @memberof qz.file
+             * @memberof printlib.file
              */
             setFileCallbacks: function(calls) {
-                _qz.file.fileCallbacks = calls;
+                _printlib.file.fileCallbacks = calls;
             }
         },
 
         /**
          * Calls related to networking information
-         * @namespace qz.networking
+         * @namespace printlib.networking
          * @since 2.1.0
          */
         networking: {
@@ -2589,18 +2592,18 @@ var qz = (function() {
              * @param {number} [port] Port to use with custom hostname, defaults to 443
              * @returns {Promise<Object|Error>} Connected system's network information.
              *
-             * @memberof qz.networking
+             * @memberof printlib.networking
              * @since 2.1.0
              */
             device: function(hostname, port) {
                 // Wrap 2.0
-                if (_qz.tools.isVersion(2, 0)) {
-                    return _qz.compatible.networking(hostname, port, null, null, function(data) {
+                if (_printlib.tools.isVersion(2, 0)) {
+                    return _printlib.compatible.networking(hostname, port, null, null, function(data) {
                         return { ip: data.ipAddress, mac: data.macAddress };
                     });
                 }
                 // Use 2.1
-                return _qz.websocket.dataPromise('networking.device', {
+                return _printlib.websocket.dataPromise('networking.device', {
                     hostname: hostname,
                     port: port
                 });
@@ -2613,20 +2616,20 @@ var qz = (function() {
              * @param {number} [port] DEPRECATED Port to use with custom hostname, defaults to 443
              * @returns {Promise<string|Error>} Connected system's hostname.
              *
-             * @memberof qz.networking
+             * @memberof printlib.networking
              * @since 2.2.2
              */
             hostname: function(hostname, port) {
                 // Wrap < 2.2.2
-                if (_qz.tools.versionCompare(2, 2, 2) < 0) {
-                    return _qz.tools.promise(function(resolve, reject) {
-                        _qz.websocket.dataPromise('networking.device', { hostname: hostname, port: port }).then(function(device) {
+                if (_printlib.tools.versionCompare(2, 2, 2) < 0) {
+                    return _printlib.tools.promise(function(resolve, reject) {
+                        _printlib.websocket.dataPromise('networking.device', { hostname: hostname, port: port }).then(function(device) {
                             console.log(device);
                             resolve(device.hostname);
                         });
                     });
                 } else {
-                    return _qz.websocket.dataPromise('networking.hostname');
+                    return _printlib.websocket.dataPromise('networking.hostname');
                 }
             },
 
@@ -2635,18 +2638,18 @@ var qz = (function() {
              * @param {number} [port] Port to use with custom hostname, defaults to 443
              * @returns {Promise<Array<Object>|Error>} Connected system's network information.
              *
-             * @memberof qz.networking
+             * @memberof printlib.networking
              * @since 2.1.0
              */
             devices: function(hostname, port) {
                 // Wrap 2.0
-                if (_qz.tools.isVersion(2, 0)) {
-                    return _qz.compatible.networking(hostname, port, null, null, function(data) {
+                if (_printlib.tools.isVersion(2, 0)) {
+                    return _printlib.compatible.networking(hostname, port, null, null, function(data) {
                         return [{ ip: data.ipAddress, mac: data.macAddress }];
                     });
                 }
                 // Use 2.1
-                return _qz.websocket.dataPromise('networking.devices', {
+                return _printlib.websocket.dataPromise('networking.devices', {
                     hostname: hostname,
                     port: port
                 });
@@ -2656,7 +2659,7 @@ var qz = (function() {
 
         /**
          * Calls related to signing connection requests.
-         * @namespace qz.security
+         * @namespace printlib.security
          */
         security: {
             /**
@@ -2666,11 +2669,11 @@ var qz = (function() {
              *     an async function, or a promise. Any of which should return the public certificate via their respective <code>resolve</code> call.
              * @param {Object} [options] Configuration options for the certificate resolver
              *  @param {boolean} [options.rejectOnFailure=[false]] Overrides default behavior to call resolve with a blank certificate on failure.
-             * @memberof qz.security
+             * @memberof printlib.security
              */
             setCertificatePromise: function(promiseHandler, options) {
-                _qz.security.certHandler = promiseHandler;
-                _qz.security.rejectOnCertFailure = !!(options && options.rejectOnFailure);
+                _printlib.security.certHandler = promiseHandler;
+                _printlib.security.rejectOnCertFailure = !!(options && options.rejectOnFailure);
             },
 
             /**
@@ -2682,92 +2685,92 @@ var qz = (function() {
              *     the passed string parameter via their respective <code>resolve</code> call.
              *
              * @example
-             *  qz.security.setSignaturePromise(function(dataToSign) {
+             *  printlib.security.setSignaturePromise(function(dataToSign) {
              *    return function(resolve, reject) {
              *      $.ajax("/signing-url?data=" + dataToSign).then(resolve, reject);
              *    }
              *  })
              *
-             * @memberof qz.security
+             * @memberof printlib.security
              */
             setSignaturePromise: function(promiseFactory) {
-                _qz.security.signatureFactory = promiseFactory;
+                _printlib.security.signatureFactory = promiseFactory;
             },
 
             /**
-             * Set which signing algorithm QZ will check signatures against.
+             * Set which signing algorithm PrintLib will check signatures against.
              *
              * @param {string} algorithm The algorithm used in signing. Valid values: <code>[SHA1 | SHA256 | SHA512]</code>
              * @since 2.1.0
              *
-             * @memberof qz.security
+             * @memberof printlib.security
              */
             setSignatureAlgorithm: function(algorithm) {
                 //warn for incompatibilities if known
-                if (!_qz.compatible.algorithm()) {
+                if (!_printlib.compatible.algorithm()) {
                     return;
                 }
 
                 if (["SHA1", "SHA256", "SHA512"].indexOf(algorithm.toUpperCase()) < 0) {
-                    _qz.log.error("Signing algorithm '" + algorithm + "' is not supported.");
+                    _printlib.log.error("Signing algorithm '" + algorithm + "' is not supported.");
                 } else {
-                    _qz.security.signAlgorithm = algorithm;
+                    _printlib.security.signAlgorithm = algorithm;
                 }
             },
 
             /**
-             * Get the signing algorithm QZ will be checking signatures against.
+             * Get the signing algorithm PrintLib will be checking signatures against.
              *
              * @returns {string} The algorithm used in signing.
              * @since 2.1.0
              *
-             * @memberof qz.security
+             * @memberof printlib.security
              */
             getSignatureAlgorithm: function() {
-                return _qz.security.signAlgorithm;
+                return _printlib.security.signAlgorithm;
             }
         },
 
         /**
          * Calls related to compatibility adjustments
-         * @namespace qz.api
+         * @namespace printlib.api
          */
         api: {
             /**
-             * Show or hide QZ api debugging statements in the browser console.
+             * Show or hide PrintLib api debugging statements in the browser console.
              *
-             * @param {boolean} show Whether the debugging logs for QZ should be shown. Hidden by default.
+             * @param {boolean} show Whether the debugging logs for PrintLib should be shown. Hidden by default.
              * @returns {boolean} Value of debugging flag
-             * @memberof qz.api
+             * @memberof printlib.api
              */
             showDebug: function(show) {
-                return (_qz.DEBUG = show);
+                return (_printlib.DEBUG = show);
             },
 
             /**
-             * Get version of connected QZ Tray application.
+             * Get version of connected QZ Tray application (via PrintLib).
              *
-             * @returns {Promise<string|Error>} Version number of QZ Tray.
+             * @returns {Promise<string|Error>} Version number of the connected QZ Tray instance.
              *
-             * @memberof qz.api
+             * @memberof printlib.api
              */
             getVersion: function() {
-                return _qz.websocket.dataPromise('getVersion');
+                return _printlib.websocket.dataPromise('getVersion');
             },
 
             /**
-             * Checks for the specified version of connected QZ Tray application.
+             * Checks for the specified version of connected QZ Tray application (via PrintLib).
              *
              * @param {string|number} [major] Major version to check
              * @param {string|number} [minor] Minor version to check
              * @param {string|number} [patch] Patch version to check
              *
-             * @memberof qz.api
+             * @memberof printlib.api
              */
-            isVersion: _qz.tools.isVersion,
+            isVersion: _printlib.tools.isVersion,
 
             /**
-             * Checks if the connected QZ Tray application is greater than the specified version.
+             * Checks if the connected QZ Tray version is greater than the specified version.
              *
              * @param {string|number} major Major version to check
              * @param {string|number} [minor] Minor version to check
@@ -2775,15 +2778,15 @@ var qz = (function() {
              * @param {string|number} [build] Build version to check
              * @returns {boolean} True if connected version is greater than the version specified.
              *
-             * @memberof qz.api
+             * @memberof printlib.api
              * @since 2.1.0-4
              */
             isVersionGreater: function(major, minor, patch, build) {
-                return _qz.tools.versionCompare(major, minor, patch, build) > 0;
+                return _printlib.tools.versionCompare(major, minor, patch, build) > 0;
             },
 
             /**
-             * Checks if the connected QZ Tray application is less than the specified version.
+             * Checks if the connected QZ Tray version is less than the specified version.
              *
              * @param {string|number} major Major version to check
              * @param {string|number} [minor] Minor version to check
@@ -2791,35 +2794,35 @@ var qz = (function() {
              * @param {string|number} [build] Build version to check
              * @returns {boolean} True if connected version is less than the version specified.
              *
-             * @memberof qz.api
+             * @memberof printlib.api
              * @since 2.1.0-4
              */
             isVersionLess: function(major, minor, patch, build) {
-                return _qz.tools.versionCompare(major, minor, patch, build) < 0;
+                return _printlib.tools.versionCompare(major, minor, patch, build) < 0;
             },
 
             /**
-             * Change the promise library used by QZ API.
+             * Change the promise library used by PrintLib API.
              * Should be called before any initialization to avoid possible errors.
              *
              * @param {Function} promiser <code>Function({function} resolver)</code> called to create new promises.
              *
-             * @memberof qz.api
+             * @memberof printlib.api
              */
             setPromiseType: function(promiser) {
-                _qz.tools.promise = promiser;
+                _printlib.tools.promise = promiser;
             },
 
             /**
-             * Change the SHA-256 hashing function used by QZ API.
+             * Change the SHA-256 hashing function used by PrintLib API.
              * Should be called before any initialization to avoid possible errors.
              *
              * @param {Function} hasher <code>Function({function} message)</code> called to create hash of passed string.
              *
-             * @memberof qz.api
+             * @memberof printlib.api
              */
             setSha256Type: function(hasher) {
-                _qz.tools.hash = hasher;
+                _printlib.tools.hash = hasher;
             },
 
             /**
@@ -2828,10 +2831,10 @@ var qz = (function() {
              *
              * @param {Function} ws <code>Function({function} WebSocket)</code> called to override the internal WebSocket handler.
              *
-             * @memberof qz.api
+             * @memberof printlib.api
              */
             setWebSocketType: function(ws) {
-                _qz.tools.ws = ws;
+                _printlib.tools.ws = ws;
             }
         },
 
@@ -2840,21 +2843,21 @@ var qz = (function() {
          *
          * @constant {string}
          *
-         * @memberof qz
+         * @memberof printlib
          */
-        version: _qz.VERSION
+        version: _printlib.VERSION
     };
 
-    return qz;
+    return printlib;
 })();
 
 
 (function() {
     if (typeof define === 'function' && define.amd) {
-        define(qz);
+        define(printlib);
     } else if (typeof exports === 'object') {
-        module.exports = qz;
+        module.exports = printlib;
     } else {
-        window.qz = qz;
+        window.printlib = printlib;
     }
 })();
