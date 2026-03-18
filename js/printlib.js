@@ -2848,6 +2848,23 @@ var printlib = (function() {
         version: _printlib.VERSION
     };
 
+    /**
+     * Extension point: expose internal dataPromise for external wrappers
+     * that need to send custom calls over the established WebSocket connection.
+     *
+     * @param {string} callName The server-side call name
+     * @param {Object} [params] Parameters for the call
+     * @param {string} [signature] Optional pre-signed signature
+     * @param {number} [signingTimestamp] Optional timestamp for pre-signed content
+     * @returns {Promise} Promise that resolves with the server response
+     *
+     * @memberof printlib.websocket
+     */
+    printlib.websocket.sendCall = function(callName, params, signature, signingTimestamp) {
+        _printlib.tools.assertActive();
+        return _printlib.websocket.dataPromise(callName, params, signature, signingTimestamp);
+    };
+
     return printlib;
 })();
 
