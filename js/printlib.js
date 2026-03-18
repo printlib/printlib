@@ -8,7 +8,7 @@
  * Based on QZ Tray Connector (https://qz.io) by QZ Industries, LLC.
  * Original source licensed under LGPL-2.1-only.
  * <p/>
- * Connects a web client to the QZ Tray software.
+ * Connects a web client to the PrintLib library.
  * Enables printing and device communication from javascript.
  */
 var printlib = (function() {
@@ -61,7 +61,7 @@ var printlib = (function() {
 
             /** Default parameters used on new connections. Override values using options parameter on {@link printlib.websocket.connect}. */
             connectConfig: {
-                host: ["localhost", "localhost.qz.io"], //hosts QZ Tray can be running on
+                host: ["localhost"], //hosts PrintLib can be running on
                 hostIndex: 0,                           //internal var - index on host array
                 usingSecure: true,                      //boolean use of secure protocol
                 protocol: {
@@ -69,8 +69,8 @@ var printlib = (function() {
                     insecure: "ws://"                   //insecure websocket
                 },
                 port: {
-                    secure: [8181, 8282, 8383, 8484],   //list of secure ports QZ Tray could be listening on
-                    insecure: [8182, 8283, 8384, 8485], //list of insecure ports QZ Tray could be listening on
+                    secure: [8181, 8282, 8383, 8484],   //list of secure ports PrintLib could be listening on
+                    insecure: [8182, 8283, 8384, 8485], //list of insecure ports PrintLib could be listening on
                     portIndex: 0                        //internal var - index on active port array
                 },
                 keepAlive: 60,                          //time between pings to keep connection alive, in seconds
@@ -296,7 +296,7 @@ var printlib = (function() {
                         if (returned.uid == null) {
                             if (returned.type == null) {
                                 //incorrect response format, likely connected to incompatible printlib version
-                                _printlib.websocket.connection.close(4003, "Connected to incompatible QZ Tray version");
+                                _printlib.websocket.connection.close(4003, "Connected to incompatible PrintLib version");
 
                             } else {
                                 //streams (callbacks only, no promises)
@@ -963,14 +963,14 @@ var printlib = (function() {
                 });
             },
 
-            /** Check if connected QZ Tray version supports chosen algorithm */
+            /** Check if connected PrintLib version supports chosen algorithm */
             algorithm: function(quiet) {
                 //if not connected yet we will assume compatibility exists for the time being
                 //check semver to guard race condition for pending connections
                 if (_printlib.tools.isActive() && _printlib.websocket.connection.semver) {
                     if (_printlib.tools.isVersion(2, 0)) {
                         if (!quiet) {
-                            _printlib.log.warn("Connected to an older version of QZ Tray, alternate signature algorithms are not supported");
+                            _printlib.log.warn("Connected to an older version of PrintLib, alternate signature algorithms are not supported");
                         }
                         return false;
                     }
@@ -1179,7 +1179,7 @@ var printlib = (function() {
              * Call to setup connection with PrintLib on user's system.
              *
              * @param {Object} [options] Configuration options for the web socket connection.
-             *  @param {string|Array<string>} [options.host=['localhost', 'localhost.qz.io']] Host running the QZ Tray software.
+             *  @param {string|Array<string>} [options.host=['localhost', 'localhost.qz.io']] Host running the PrintLib software.
              *  @param {Object} [options.port] Config options for ports to cycle.
              *   @param {Array<number>} [options.port.secure=[8181, 8282, 8383, 8484]] Array of secure (WSS) ports to try
              *   @param {Array<number>} [options.port.insecure=[8182, 8283, 8384, 8485]] Array of insecure (WS) ports to try
@@ -2294,7 +2294,7 @@ var printlib = (function() {
                     if (typeof deviceInfo.data === 'object') {
                         if (deviceInfo.data.type.toUpperCase() !== "PLAIN"
                             || typeof deviceInfo.data.data !== "string") {
-                            return _printlib.tools.reject(new Error("Data format is not supported with connected QZ Tray version " + _printlib.websocket.connection.version));
+                            return _printlib.tools.reject(new Error("Data format is not supported with connected PrintLib version " + _printlib.websocket.connection.version));
                         }
 
                         deviceInfo.data = deviceInfo.data.data;
@@ -2748,9 +2748,9 @@ var printlib = (function() {
             },
 
             /**
-             * Get version of connected QZ Tray application (via PrintLib).
+             * Get version of connected PrintLib application (via PrintLib).
              *
-             * @returns {Promise<string|Error>} Version number of the connected QZ Tray instance.
+             * @returns {Promise<string|Error>} Version number of the connected PrintLib instance.
              *
              * @memberof printlib.api
              */
@@ -2759,7 +2759,7 @@ var printlib = (function() {
             },
 
             /**
-             * Checks for the specified version of connected QZ Tray application (via PrintLib).
+             * Checks for the specified version of connected PrintLib application (via PrintLib).
              *
              * @param {string|number} [major] Major version to check
              * @param {string|number} [minor] Minor version to check
@@ -2770,7 +2770,7 @@ var printlib = (function() {
             isVersion: _printlib.tools.isVersion,
 
             /**
-             * Checks if the connected QZ Tray version is greater than the specified version.
+             * Checks if the connected PrintLib version is greater than the specified version.
              *
              * @param {string|number} major Major version to check
              * @param {string|number} [minor] Minor version to check
@@ -2786,7 +2786,7 @@ var printlib = (function() {
             },
 
             /**
-             * Checks if the connected QZ Tray version is less than the specified version.
+             * Checks if the connected PrintLib version is less than the specified version.
              *
              * @param {string|number} major Major version to check
              * @param {string|number} [minor] Minor version to check
