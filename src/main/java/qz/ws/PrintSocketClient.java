@@ -38,6 +38,7 @@ import qz.communication.DeviceListener;
 import qz.printer.PrintServiceMatcher;
 import qz.printer.status.StatusMonitor;
 import qz.utils.PrintingUtilities;
+import qz.ws.PrintValidationHook.RegisteredComponent;
 import qz.ws.substitutions.Substitutions;
 
 @WebSocket
@@ -56,6 +57,9 @@ public class PrintSocketClient {
     
     // List of listeners to be notified when messages are processed
     private static final List<MessageProcessedListener> messageProcessedListeners = new ArrayList<>();
+    
+    // List of listeners to be notified about print job results (success/failure per printer)
+    private static final List<PrintMetricsListener> printMetricsListeners = new ArrayList<>();
 
     public PrintSocketClient(Server server, @lombok.NonNull AppHook trayProvider, @lombok.NonNull PromptHook serverDialogProvider, @lombok.NonNull PrintValidationHook printValidationHook) {
         this.trayProvider = trayProvider;
@@ -93,6 +97,46 @@ public class PrintSocketClient {
         if (listener != null) {
             messageProcessedListeners.remove(listener);
             log.debug("Removed message processed listener: {}", listener.getClass().getName());
+        }
+    }
+    
+    /**
+     * Adds a listener to be notified about print job results (success/failure per printer).
+     *
+     * @param listener The listener to add
+     */
+    public static void addPrintMetricsListener(PrintMetricsListener listener) {
+        if (listener != null && !printMetricsListeners.contains(listener)) {
+            printMetricsListeners.add(listener);
+            log.debug("Added print metrics listener: {}", listener.getClass().getName());
+        }
+    }
+    
+    /**
+     * Removes a print metrics listener.
+     *
+     * @param listener The listener to remove
+     */
+    public static void removePrintMetricsListener(PrintMetricsListener listener) {
+        if (listener != null) {
+            printMetricsListeners.remove(listener);
+            log.debug("Removed print metrics listener: {}", listener.getClass().getName());
+        }
+    }
+    
+    /**
+     * Notifies all print metrics listeners about a print job result.
+     *
+     * @param printerName The printer name from the print request
+     * @param success     Whether the print job succeeded
+     */
+    private static void notifyPrintMetrics(String printerName, boolean success) {
+        for (PrintMetricsListener listener : printMetricsListeners) {
+            try {
+                listener.onPrintResult(printerName, success);
+            } catch (Exception e) {
+                log.error("Error notifying print metrics listener", e);
+            }
         }
     }
     
@@ -171,6 +215,16 @@ public class PrintSocketClient {
         
         // Store the Origin header in the connection
         connection.setOriginHeader(originHeader);
+        
+        // Extract User-Agent header from WebSocket upgrade request
+        String userAgent = null;
+        if (session.getUpgradeRequest() != null && session.getUpgradeRequest().getHeaders() != null) {
+            userAgent = session.getUpgradeRequest().getHeader("User-Agent");
+            if (userAgent != null) {
+                log.debug("=== USER_AGENT_EXTRACTION === | User-Agent: {}", userAgent);
+            }
+        }
+        connection.setUserAgent(userAgent);
         
         Integer remotePort = ((InetSocketAddress) session.getRemoteAddress()).getPort();
         
@@ -512,6 +566,32 @@ public class PrintSocketClient {
             // Extract name from the JSON message if provided
             String printerName = params.optString("name", null);
             
+            // --- Feature 4: Auto-register parent device if not already registered ---
+            // Printer fingerprint format: {deviceFingerprint}/{base64PrinterName}
+            String parentDeviceFp = null;
+            if (fingerprint.contains("/")) {
+                parentDeviceFp = fingerprint.substring(0, fingerprint.indexOf('/'));
+                if (!printValidationHook.isDeviceRegistered(parentDeviceFp)) {
+                    log.info("=== AUTO_DEVICE_REGISTRATION === | Parent device {} not registered, auto-registering for printer {}",
+                        parentDeviceFp, fingerprint);
+                    
+                    // Derive device name from User-Agent or use fallback
+                    Integer connPort = ((InetSocketAddress) session.getRemoteAddress()).getPort();
+                    SocketConnection conn = openConnections.get(connPort);
+                    String autoDeviceName = deriveDeviceName(conn);
+                    
+                    boolean autoDeviceRegistered = printValidationHook.registerFingerprint("device", parentDeviceFp, autoDeviceName);
+                    if (autoDeviceRegistered) {
+                        log.info("=== AUTO_DEVICE_REGISTRATION === | SUCCESS | Auto-registered device {} with name: {}",
+                            parentDeviceFp, autoDeviceName);
+                    } else {
+                        log.warn("=== AUTO_DEVICE_REGISTRATION === | FAILED | Could not auto-register device {} (limit reached?)",
+                            parentDeviceFp);
+                        // Don't block printer registration - device limit may have been reached
+                    }
+                }
+            }
+            
             log.info("=== PRINTER_REGISTRATION === | Starting printer registration | FINGERPRINT: {} | NAME: {} | CURRENT_CACHE_SIZE: {} | MAX_PRINTERS: {}",
                 fingerprint, printerName != null ? printerName : "auto-generated",
                 printValidationHook.getCurrentPrinterCount(), printValidationHook.getPrinterLimit());
@@ -548,6 +628,21 @@ public class PrintSocketClient {
                 log.info("=== PRINTER_UNREGISTRATION === | SUCCESS | Printer fingerprint unregistered: {} | NEW_CACHE_SIZE: {}",
                     fingerprint, printValidationHook.getCurrentPrinterCount());
                 
+                // --- Feature 3: Auto-unregister orphan parent device ---
+                if (fingerprint.contains("/")) {
+                    String orphanDeviceFp = fingerprint.substring(0, fingerprint.indexOf('/'));
+                    if (printValidationHook.isDeviceRegistered(orphanDeviceFp)
+                            && !printValidationHook.deviceHasPrinters(orphanDeviceFp)) {
+                        log.info("=== AUTO_DEVICE_UNREGISTRATION === | Device {} has no more printers, auto-unregistering", orphanDeviceFp);
+                        boolean deviceRemoved = printValidationHook.unregisterFingerprint("device", orphanDeviceFp);
+                        if (deviceRemoved) {
+                            log.info("=== AUTO_DEVICE_UNREGISTRATION === | SUCCESS | Orphan device {} removed", orphanDeviceFp);
+                        } else {
+                            log.warn("=== AUTO_DEVICE_UNREGISTRATION === | FAILED | Could not remove orphan device {}", orphanDeviceFp);
+                        }
+                    }
+                }
+                
                 // Log cache state after unregistration
                 log.debug("=== PRINTER_UNREGISTRATION === | POST_UNREGISTRATION_CACHE_STATE | Device cache size: {} | Printer cache size: {} | Server cache size: {}",
                     printValidationHook.getCurrentDeviceCount(), printValidationHook.getCurrentPrinterCount(), printValidationHook.getCurrentServerCount());
@@ -574,11 +669,52 @@ public class PrintSocketClient {
                 for (int i = 0; i < services.length(); i++) {
                     names.put(services.getJSONObject(i).getString("name"));
                 }
-                // Add available device count to the response
+
+                // Build enriched printerDetails array
+                List<RegisteredComponent> registeredPrinters = printValidationHook.getRegisteredComponents("printer");
+                JSONArray printerDetails = new JSONArray();
+                for (int i = 0; i < names.length(); i++) {
+                    String pName = names.getString(i);
+                    JSONObject detail = new JSONObject();
+                    detail.put("name", pName);
+
+                    // Find matching registered component by name
+                    RegisteredComponent match = null;
+                    for (RegisteredComponent rc : registeredPrinters) {
+                        if (pName.equals(rc.getName())) {
+                            match = rc;
+                            break;
+                        }
+                    }
+
+                    if (match != null) {
+                        detail.put("registered", true);
+                        detail.put("fingerprint", match.getFingerprint());
+                        // Extract device fingerprint from printer fingerprint
+                        String pFp = match.getFingerprint();
+                        detail.put("deviceFingerprint", pFp.contains("/") ? pFp.substring(0, pFp.indexOf('/')) : JSONObject.NULL);
+                        detail.put("componentName", match.getName());
+                        detail.put("createdDate", match.getCreatedDate() != null ? match.getCreatedDate() : JSONObject.NULL);
+                    } else {
+                        detail.put("registered", false);
+                        detail.put("fingerprint", JSONObject.NULL);
+                        detail.put("deviceFingerprint", JSONObject.NULL);
+                        detail.put("componentName", JSONObject.NULL);
+                        detail.put("createdDate", JSONObject.NULL);
+                    }
+                    printerDetails.put(detail);
+                }
+
+                // Backward-compatible response: printers (string[]) + printerDetails (object[])
                 JSONObject response = new JSONObject();
                 response.put("printers", names);
+                response.put("printerDetails", printerDetails);
                 response.put("currentPrinters", printValidationHook.getCurrentPrinterCount());
                 response.put("maxPrinters", printValidationHook.getPrinterLimit());
+                response.put("currentDevices", printValidationHook.getCurrentDeviceCount());
+                response.put("maxDevices", printValidationHook.getDeviceLimit());
+                response.put("currentServers", printValidationHook.getCurrentServerCount());
+                response.put("maxServers", getServerLimit());
                 sendResult(session, UID, response);
             }
             break;
@@ -602,7 +738,17 @@ public class PrintSocketClient {
             sendResult(session, UID, null);
             break;
         case PRINT:
-            PrintingUtilities.processPrintRequest(session, UID, params);
+            // Extract printer name for metrics tracking before delegating to PrintingUtilities
+            String printMetricsPrinterName = null;
+            try {
+                JSONObject printerObj = params.optJSONObject("printer");
+                if (printerObj != null) {
+                    printMetricsPrinterName = printerObj.optString("name", null);
+                }
+            } catch (Exception ignore) { /* best-effort extraction */ }
+            
+            boolean printSuccess = PrintingUtilities.processPrintRequest(session, UID, params);
+            notifyPrintMetrics(printMetricsPrinterName, printSuccess);
             break;
 
         case GET_VERSION:
@@ -820,6 +966,63 @@ public class PrintSocketClient {
             }
         }
     
+    }
+
+    /**
+     * Derives a human-readable device name from the WebSocket connection's User-Agent header.
+     * Falls back to a generic name if User-Agent is unavailable.
+     *
+     * @param connection the socket connection (may be null)
+     * @return a device name string, never null
+     */
+    private String deriveDeviceName(SocketConnection connection) {
+        if (connection != null && connection.getUserAgent() != null && !connection.getUserAgent().isEmpty()) {
+            String ua = connection.getUserAgent();
+            // Try to extract browser + OS from User-Agent
+            // e.g. "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ... Chrome/145.0.0.0 Safari/537.36"
+            String browser = "Browser";
+            String os = "Unknown OS";
+
+            if (ua.contains("Chrome/") && !ua.contains("Edg/")) {
+                int idx = ua.indexOf("Chrome/");
+                String version = ua.substring(idx + 7).split(" ")[0].split("\\.")[0];
+                browser = "Chrome " + version;
+            } else if (ua.contains("Edg/")) {
+                int idx = ua.indexOf("Edg/");
+                String version = ua.substring(idx + 4).split(" ")[0].split("\\.")[0];
+                browser = "Edge " + version;
+            } else if (ua.contains("Firefox/")) {
+                int idx = ua.indexOf("Firefox/");
+                String version = ua.substring(idx + 8).split(" ")[0].split("\\.")[0];
+                browser = "Firefox " + version;
+            } else if (ua.contains("Safari/") && !ua.contains("Chrome")) {
+                browser = "Safari";
+            }
+
+            if (ua.contains("Windows NT 10")) {
+                os = "Windows 10/11";
+            } else if (ua.contains("Windows NT")) {
+                os = "Windows";
+            } else if (ua.contains("Mac OS X")) {
+                os = "macOS";
+            } else if (ua.contains("Linux")) {
+                os = "Linux";
+            } else if (ua.contains("Android")) {
+                os = "Android";
+            } else if (ua.contains("iPhone") || ua.contains("iPad")) {
+                os = "iOS";
+            }
+
+            return browser + " / " + os;
+        }
+        return "Auto-registered Device";
+    }
+
+    /**
+     * Gets the server limit from the validation hook.
+     */
+    private int getServerLimit() {
+        return printValidationHook.getServerLimit();
     }
 
     /**

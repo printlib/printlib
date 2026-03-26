@@ -17,6 +17,7 @@ public class SocketConnection {
 
     private Certificate certificate;
     private String originHeader; // Store the Origin header from WebSocket request
+    private String userAgent;   // Store the User-Agent header from WebSocket request
     
     // No longer storing fingerprints in the connection
 
@@ -41,6 +42,14 @@ public class SocketConnection {
     
     public void setOriginHeader(String originHeader) {
         this.originHeader = originHeader;
+    }
+    
+    public String getUserAgent() {
+        return userAgent;
+    }
+    
+    public void setUserAgent(String userAgent) {
+        this.userAgent = userAgent;
     }
     
     // Removed fingerprint getters and setters as they should be handled per-message

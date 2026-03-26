@@ -191,7 +191,15 @@ public class PrintingUtilities {
      * @param UID     ID of call from web API
      * @param params  Params of call from web API
      */
-    public static void processPrintRequest(Session session, String UID, JSONObject params) throws JSONException {
+    /**
+     * Determine print variables and send data to printer.
+     *
+     * @param session WebSocket session
+     * @param UID     ID of call from web API
+     * @param params  Params of call from web API
+     * @return {@code true} if print completed successfully, {@code false} on error or cancellation
+     */
+    public static boolean processPrintRequest(Session session, String UID, JSONObject params) throws JSONException {
         JSONArray printData = params.getJSONArray("data");
         convertVersion(printData);
 
@@ -216,14 +224,17 @@ public class PrintingUtilities {
             log.info("Printing complete");
 
             PrintSocketClient.sendResult(session, UID, null);
+            return true;
         }
         catch(PrinterAbortException e) {
             log.warn("Printing cancelled");
             PrintSocketClient.sendError(session, UID, "Printing cancelled");
+            return false;
         }
         catch(Exception e) {
             log.error("Failed to print", e);
             PrintSocketClient.sendError(session, UID, e);
+            return false;
         }
         finally {
             PrintingUtilities.releasePrintProcessor(processor);
