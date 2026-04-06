@@ -200,11 +200,26 @@ public abstract class PrintSocketServer {
                 });
 
                 // Handle HTTP landing page
-                ServletHolder httpServlet = new ServletHolder();
-                httpServlet.setServlet(createHttpAboutServlet());
+                // Create ServletHolder with servlet class, then configure instance to avoid SingleThreadModel check
+                var httpServletInstance = createHttpAboutServlet();
+                if (httpServletInstance != null) {
+                    ServletHolder httpServlet = new ServletHolder(httpServletInstance.getClass());
+                    // Bypass setServlet() which checks for deprecated SingleThreadModel
+                    // Use reflection to set the servlet instance directly
+                    try {
+                        java.lang.reflect.Field servletField = ServletHolder.class.getDeclaredField("_servlet");
+                        servletField.setAccessible(true);
+                        servletField.set(httpServlet, httpServletInstance);
+                    } catch (Exception e) {
+                        log.error("Failed to configure servlet instance", e);
+                        throw new RuntimeException("Failed to configure HTTP servlet", e);
+                    }
 
-                context.addServlet(httpServlet, "/");
-                context.addServlet(httpServlet, "/json");
+                    context.addServlet(httpServlet, "/");
+                    context.addServlet(httpServlet, "/json");
+                } else {
+                    log.debug("HTTP servlet not available - skipping HTTP endpoint registration");
+                }
 
                 server.setHandler(context);
                 server.setStopAtShutdown(true);
