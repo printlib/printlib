@@ -18,5 +18,5 @@ However, if you modify this library, you must:
 
 For more information about the LGPL license, see:
 - [GNU Lesser General Public License v2.1](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
-- [GPL v2.0](GPL-2.0) (referenced by LGPL)
+- [GPL v2.0](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html) (referenced by LGPL)
 
