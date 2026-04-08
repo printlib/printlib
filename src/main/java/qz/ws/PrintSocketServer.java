@@ -112,10 +112,10 @@ public abstract class PrintSocketServer {
         }
 
         log.info("WebSocket server host HARDCODED to: {}", WSS_HOST);
-        httpsOnly = PrefsSearch.getBoolean(ArgValue.SECURITY_WSS_HTTPSONLY, getSSLProperties());
+        httpsOnly = !headless && PrefsSearch.getBoolean(ArgValue.SECURITY_WSS_HTTPSONLY, getSSLProperties());
         sniStrict = PrefsSearch.getBoolean(ArgValue.SECURITY_WSS_SNISTRICT, getSSLProperties());
 
-        server = findAvailableSecurePort();
+        server = findAvailableSecurePort(headless);
 
         Connector secureConnector = null;
         if (server.getConnectors().length > 0 && !server.getConnectors()[0].isFailed()) {
@@ -130,10 +130,11 @@ public abstract class PrintSocketServer {
         while(!running.get() && websocketPorts.insecureBoundsCheck()) {
             try {
                 ServerConnector connector = new ServerConnector(server);
-                connector.setPort(websocketPorts.getInsecurePort());
+                int port = headless ? 8181 : websocketPorts.getInsecurePort();
+                connector.setPort(port);
                 connector.setHost(WSS_HOST);
                 log.info("=== INSECURE CONNECTOR SETUP ===");
-                log.info("Insecure connector port set to: {}", websocketPorts.getInsecurePort());
+                log.info("Insecure connector port set to: {}", port);
                 log.info("Insecure connector host set to: {}", WSS_HOST);
                 
                 if(httpsOnly) {
@@ -200,11 +201,26 @@ public abstract class PrintSocketServer {
                 });
 
                 // Handle HTTP landing page
-                ServletHolder httpServlet = new ServletHolder();
-                httpServlet.setServlet(createHttpAboutServlet());
+                // Create ServletHolder with servlet class, then configure instance to avoid SingleThreadModel check
+                var httpServletInstance = createHttpAboutServlet();
+                if (httpServletInstance != null) {
+                    ServletHolder httpServlet = new ServletHolder(httpServletInstance.getClass());
+                    // Bypass setServlet() which checks for deprecated SingleThreadModel
+                    // Use reflection to set the servlet instance directly
+                    try {
+                        java.lang.reflect.Field servletField = ServletHolder.class.getDeclaredField("_servlet");
+                        servletField.setAccessible(true);
+                        servletField.set(httpServlet, httpServletInstance);
+                    } catch (Exception e) {
+                        log.error("Failed to configure servlet instance", e);
+                        throw new RuntimeException("Failed to configure HTTP servlet", e);
+                    }
 
-                context.addServlet(httpServlet, "/");
-                context.addServlet(httpServlet, "/json");
+                    context.addServlet(httpServlet, "/about");
+                    context.addServlet(httpServlet, "/about/json");
+                } else {
+                    log.debug("HTTP servlet not available - skipping HTTP endpoint registration");
+                }
 
                 server.setHandler(context);
                 server.setStopAtShutdown(true);
@@ -288,7 +304,11 @@ public abstract class PrintSocketServer {
      *
      * @return configured Server instance with secure connector
      */
-    private Server findAvailableSecurePort() {
+    private Server findAvailableSecurePort(boolean headless) {
+        if (headless) {
+            log.info("Headless mode: Skipping SSL setup, using plain HTTP");
+            return new Server();
+        }
         Server server = new Server();
 
         try {
