@@ -19,6 +19,7 @@ import javafx.scene.transform.Transform;
 import javafx.scene.transform.Translate;
 import javafx.scene.web.WebView;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import qz.common.Constants;
 
 import org.apache.logging.log4j.LogManager;
@@ -245,9 +246,7 @@ public class WebApp extends Application {
 
     @Override
     public void start(Stage st) throws Exception {
-        startupLatch.countDown();
-        logger.debug("Started JavaFX");
-
+        st.initStyle(StageStyle.UNDECORATED);
         webView = new WebView();
 
         // JDK-8283686: Printing WebView may results in empty page
@@ -260,6 +259,7 @@ public class WebApp extends Application {
 
         st.setScene(new Scene(webView));
         stage = st;
+        stage.setOpacity(0.0);
         stage.setWidth(1);
         stage.setHeight(1);
 
@@ -271,6 +271,9 @@ public class WebApp extends Application {
 
         //prevents JavaFX from shutting down when hiding window
         Platform.setImplicitExit(false);
+
+        startupLatch.countDown();
+        logger.debug("Started JavaFX");
     }
 
     /**
