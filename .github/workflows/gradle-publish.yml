@@ -1,11 +1,7 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-# This workflow will build a package using Gradle and then publish it to GitHub packages when a release is created
-# For more information see: https://github.com/actions/setup-java/blob/main/docs/advanced-usage.md#Publishing-using-gradle
+# This workflow builds tagged releases and verifies the public JitPack artifact
+# used by downstream consumers such as the tray application.
 
-name: Gradle Package
+name: Gradle Release Verify
 
 on:
   push:
@@ -18,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
     - uses: actions/checkout@v4
@@ -39,11 +34,33 @@ jobs:
     - name: Build with Gradle
       run: ./gradlew build
 
-    # The USERNAME and TOKEN need to correspond to the credentials environment variables used in
-    # the publishing section of your build.gradle
-    - name: Publish to GitHub Packages
-      continue-on-error: true
-      run: ./gradlew publish --info
+    - name: Resolve release version
+      id: version
+      run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+    - name: Verify public JitPack artifact
       env:
-        USERNAME: ${{ github.actor }}
-        TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        set -euo pipefail
+
+        POM_URL="https://jitpack.io/com/github/printlib/printlib/${VERSION}/printlib-${VERSION}.pom"
+        JAR_URL="https://jitpack.io/com/github/printlib/printlib/${VERSION}/printlib-${VERSION}.jar"
+
+        echo "Checking public POM: ${POM_URL}"
+        curl --fail --silent --show-error --location "${POM_URL}" -o /tmp/printlib.pom
+        grep -q "<version>${VERSION}</version>" /tmp/printlib.pom
+
+        echo "Checking public JAR: ${JAR_URL}"
+        for attempt in $(seq 1 12); do
+          if curl --fail --silent --show-error --location --range 0-1023 "${JAR_URL}" -o /tmp/printlib.jar.part; then
+            echo "Public JitPack jar is available on attempt ${attempt}."
+            exit 0
+          fi
+
+          echo "JitPack artifact not ready yet (attempt ${attempt}/12); retrying in 15s..."
+          sleep 15
+        done
+
+        echo "JitPack artifact did not become available for version ${VERSION}."
+        exit 1

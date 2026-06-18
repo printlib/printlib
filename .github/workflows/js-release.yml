@@ -1,0 +1,69 @@
+name: JS Release CDN
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install terser
+        run: npm install --global terser
+
+      - name: Build JS assets
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          cp js/printlib.js dist/printlib.js
+          terser js/printlib.js -o dist/printlib.min.js --compress --mangle
+
+          echo "Unminified: $(wc -c < dist/printlib.js) bytes"
+          echo "Minified: $(wc -c < dist/printlib.min.js) bytes"
+
+      - name: Publish dist to CDN branch
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -f dist/
+
+          if git diff --cached --quiet; then
+            echo "No CDN changes to commit."
+          else
+            git commit -m "chore: update dist for ${GITHUB_REF_NAME}"
+          fi
+
+          git branch -f cdn
+          git push origin refs/heads/cdn --force
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/printlib.js
+            dist/printlib.min.js
+          generate_release_notes: true
+
+      - name: Print CDN URLs
+        run: |
+          echo "jsDelivr: https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@cdn/dist/printlib.min.js"
+          echo "Release asset: https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/printlib.min.js"
