@@ -44,16 +44,38 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -f dist/
+          publish_dir="$(mktemp -d)"
 
-          if git diff --cached --quiet; then
-            echo "No CDN changes to commit."
+          if git ls-remote --exit-code --heads origin cdn >/dev/null 2>&1; then
+            git worktree add "$publish_dir" origin/cdn
           else
-            git commit -m "chore: update dist for ${GITHUB_REF_NAME}"
+            git worktree add -B cdn "$publish_dir" HEAD
+            (
+              cd "$publish_dir"
+              git checkout --orphan cdn
+            )
           fi
 
-          git branch -f cdn
-          git push origin refs/heads/cdn --force
+          (
+            cd "$publish_dir"
+
+            find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+            mkdir -p dist
+            cp "$GITHUB_WORKSPACE/dist/printlib.js" dist/printlib.js
+            cp "$GITHUB_WORKSPACE/dist/printlib.min.js" dist/printlib.min.js
+
+            git add -A dist/
+
+            if git diff --cached --quiet; then
+              echo "No CDN changes to commit."
+            else
+              git commit -m "chore: update dist for ${GITHUB_REF_NAME}"
+            fi
+
+            git push origin HEAD:cdn --force
+          )
+
+          git worktree remove "$publish_dir" --force
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
