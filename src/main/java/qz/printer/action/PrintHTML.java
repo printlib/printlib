@@ -88,6 +88,8 @@ public class PrintHTML extends PrintImage implements PrintProcessor {
                         source = new String(flavor.read(data.getString("data")), StandardCharsets.UTF_8);
                 }
 
+                source = qz.utils.Watermark.applyToHtml(source); // expired-trial watermark (C1); no-op when inactive
+
                 double pageZoom = (pxlOpts.getDensity() * pxlOpts.getUnits().as1Inch()) / 72.0;
                 if (pageZoom <= 1) { pageZoom = 1; }
 

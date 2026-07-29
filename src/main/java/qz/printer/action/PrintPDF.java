@@ -150,6 +150,7 @@ public class PrintPDF extends PrintPixel implements PrintProcessor {
 
                 for(int pg = 0; pg < splitPages.size(); pg++) {
                     if (pagesToPrint.contains(pg + 1)) { //ranges are 1-indexed
+                        qz.utils.Watermark.applyToPdf(splitPages.get(pg)); // expired-trial watermark (C1); no-op when inactive
                         printables.add(splitPages.get(pg));
                     }
                 }

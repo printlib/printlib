@@ -92,6 +92,7 @@ public class PrintImage extends PrintPixel implements PrintProcessor, Printable 
                         bi = ImageIO.read(new ByteArrayInputStream(flavor.read(data.getString("data"))));
                 }
 
+                qz.utils.Watermark.applyToImage(bi); // expired-trial watermark (C1); no-op when inactive
                 images.add(bi);
             }
             catch(IIOException e) {
