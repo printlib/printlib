@@ -34,6 +34,16 @@ public final class Watermark {
 
     private static final float ALPHA = 0.2f;
     private static final Color WATERMARK_COLOR = new Color(196, 43, 28);
+    /** Light watermark tint for PDF (works on raster paths where PDF alpha is not honored). */
+    private static final Color WATERMARK_PDF_COLOR = new Color(240, 178, 170);
+    /** Fraction of each dimension the watermark may occupy. */
+    private static final float FIT_MARGIN = 0.90f;
+    /** Approximate average glyph width of bold latin text, in em. */
+    private static final float AVG_CHAR_EM = 0.55f;
+    /** Fraction of the diagonal the longest line may occupy. */
+    private static final float MAX_WIDTH_FRACTION = 0.85f;
+    /** Line height as a multiple of the font size. */
+    private static final float LINE_SPACING = 1.2f;
 
     private static volatile Supplier<String> textProvider = () -> null;
 
@@ -62,12 +72,15 @@ public final class Watermark {
 
     /**
      * Draws the watermark diagonally across an image, in place (no-op when inactive).
+     * Multi-line text ({@code \n} separated) is centered as a block; the font is
+     * scaled so the LONGEST line always fits the image diagonal.
      */
     public static void applyToImage(BufferedImage image) {
         String text = getText();
         if (text == null || image == null) {
             return;
         }
+        String[] lines = text.split("\\r?\\n");
         Graphics2D g = image.createGraphics();
         try {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
@@ -76,29 +89,61 @@ public final class Watermark {
 
             int width = image.getWidth();
             int height = image.getHeight();
-
-            // Scale the font so the text spans most of the diagonal
             double diagonal = Math.sqrt(width * width + height * height);
-            float fontSize = (float) Math.max(12.0, diagonal * 0.08);
+
+            // Scale font so the rotated block always fits the canvas
+            float fontSize = fitFontSize(g, lines, width, height, (float) (diagonal * 0.10));
             Font font = g.getFont().deriveFont(Font.BOLD, fontSize);
             g.setFont(font);
+            FontMetrics fm = g.getFontMetrics();
+            float lineHeight = fontSize * LINE_SPACING;
+            float blockHeight = lines.length * lineHeight;
 
-            // Center and rotate around the image center (best practice:
-            // transform the graphics context rather than computing glyph paths)
+            // Center and rotate around the image center
             AffineTransform original = g.getTransform();
             double angle = Math.atan2(height, width);
             g.translate(width / 2.0, height / 2.0);
             g.rotate(-angle);
 
-            FontMetrics fm = g.getFontMetrics();
-            float x = -fm.stringWidth(text) / 2.0f;
-            float y = fm.getAscent() / 2.0f;
-            g.drawString(text, x, y);
+            for (int i = 0; i < lines.length; i++) {
+                float x = -fm.stringWidth(lines[i]) / 2.0f;
+                float y = -blockHeight / 2.0f + i * lineHeight + fm.getAscent();
+                g.drawString(lines[i], x, y);
+            }
 
             g.setTransform(original);
         } finally {
             g.dispose();
         }
+    }
+
+    /**
+     * Computes the largest font size (capped at startSize) such that the whole
+     * rotated text block fits the canvas: longest line along the diagonal,
+     * block horizontal span within 90% of width, block vertical span within
+     * 90% of height. This is what keeps narrow/tall receipts from clipping.
+     */
+    static float fitFontSize(Graphics2D g, String[] lines, int width, int height, float startSize) {
+        double angle = Math.atan2(height, width);
+        double diagonal = Math.sqrt(width * width + height * height);
+        int maxChars = 1;
+        for (String line : lines) {
+            maxChars = Math.max(maxChars, line.length());
+        }
+        double cosA = Math.abs(Math.cos(angle));
+        double sinA = Math.abs(Math.sin(angle));
+
+        // length of longest line ~= maxChars * AVG_CHAR_EM * fontSize
+        float byDiagonal = (float) (MAX_WIDTH_FRACTION * diagonal / (maxChars * AVG_CHAR_EM));
+        // horizontal: L*cos + lineHeight*sin <= FIT_MARGIN * width
+        float byWidth = (float) (FIT_MARGIN * width
+                / (maxChars * AVG_CHAR_EM * cosA + lines.length * LINE_SPACING * sinA));
+        // vertical: L*sin + lineHeight*cos <= FIT_MARGIN * height
+        float byHeight = (float) (FIT_MARGIN * height
+                / (maxChars * AVG_CHAR_EM * sinA + lines.length * LINE_SPACING * cosA));
+
+        float size = Math.min(startSize, Math.min(byDiagonal, Math.min(byWidth, byHeight)));
+        return Math.max(8f, size);
     }
 
     // ==================== PDF (PDFBox) ====================
@@ -125,8 +170,8 @@ public final class Watermark {
     private static void addDiagonalText(PDDocument doc, PDPage page, String text) throws IOException {
         try (PDPageContentStream cs = new PDPageContentStream(
                 doc, page, PDPageContentStream.AppendMode.APPEND, true, true)) {
+            String[] lines = text.split("\\r?\\n");
             PDFont font = PDType1Font.HELVETICA_BOLD;
-            float fontHeight = 60;
             PDRectangle box = page.getMediaBox();
             float width = box.getWidth();
             float height = box.getHeight();
@@ -150,31 +195,66 @@ public final class Watermark {
                     break;
             }
 
-            float stringWidth = font.getStringWidth(sanitizeForPdf(text)) / 1000 * fontHeight;
-            float diagonalLength = (float) Math.sqrt(width * width + height * height);
-            if (stringWidth > diagonalLength * 0.9f) {
-                // Scale down so the text always fits the diagonal
-                fontHeight *= (float) (diagonalLength * 0.9f / stringWidth);
-                stringWidth = font.getStringWidth(sanitizeForPdf(text)) / 1000 * fontHeight;
-            }
+            // Scale font so the rotated block always fits the page
+            float fontHeight = fitPdfFontSize(font, lines, width, height, 60f);
+            float lineHeight = fontHeight * LINE_SPACING;
+            float blockHeight = lines.length * lineHeight;
+
             float angle = (float) Math.atan2(height, width);
-            float x = (diagonalLength - stringWidth) / 2;
-            float y = -fontHeight / 4;
+            float diagonalLength = (float) Math.sqrt(width * width + height * height);
             cs.transform(Matrix.getRotateInstance(angle, 0, 0));
             cs.setFont(font, fontHeight);
 
-            PDExtendedGraphicsState gs = new PDExtendedGraphicsState();
-            gs.setNonStrokingAlphaConstant(ALPHA);
-            gs.setStrokingAlphaConstant(ALPHA);
-            gs.setBlendMode(BlendMode.MULTIPLY);
-            cs.setGraphicsStateParameters(gs);
-            cs.setNonStrokingColor(WATERMARK_COLOR);
+            // Light tint directly - no alpha dependency (raster paths and
+            // PDFRenderer do not reliably honor alpha graphics states)
+            cs.setNonStrokingColor(WATERMARK_PDF_COLOR);
 
-            cs.beginText();
-            cs.newLineAtOffset(x, y);
-            cs.showText(sanitizeForPdf(text));
-            cs.endText();
+            // Each line starts along the diagonal so the block stays on-page;
+            // lines stack perpendicular to it, centered on the diagonal's midpoint
+            float mid = (lines.length - 1) / 2.0f;
+            for (int i = 0; i < lines.length; i++) {
+                float stringWidth = font.getStringWidth(sanitizeForPdf(lines[i])) / 1000 * fontHeight;
+                float x = (diagonalLength - stringWidth) / 2;
+                float y = (i - mid) * lineHeight + fontHeight * 0.8f;
+                cs.beginText();
+                cs.newLineAtOffset(x, y);
+                cs.showText(sanitizeForPdf(lines[i]));
+                cs.endText();
+            }
         }
+    }
+
+    /**
+     * Computes the largest PDF font size (capped at startSize) such that the
+     * rotated text block fits the page: longest line along the diagonal,
+     * block spans within 90% of width and height.
+     */
+    private static float fitPdfFontSize(PDFont font, String[] lines, float width, float height,
+                                        float startSize) throws IOException {
+        double angle = Math.atan2(height, width);
+        double diagonal = Math.sqrt(width * width + height * height);
+        String widest = lines[0];
+        int maxChars = 1;
+        for (String line : lines) {
+            if (line.length() >= widest.length()) {
+                widest = line;
+            }
+            maxChars = Math.max(maxChars, line.length());
+        }
+        double cosA = Math.abs(Math.cos(angle));
+        double sinA = Math.abs(Math.sin(angle));
+
+        // exact width of the widest line at 1pt (PDFBox gives real metrics)
+        float unitWidth = font.getStringWidth(sanitizeForPdf(widest)) / 1000f;
+
+        float byDiagonal = (float) (MAX_WIDTH_FRACTION * diagonal / unitWidth);
+        float byWidth = (float) (FIT_MARGIN * width
+                / (unitWidth * cosA + lines.length * LINE_SPACING * sinA));
+        float byHeight = (float) (FIT_MARGIN * height
+                / (unitWidth * sinA + lines.length * LINE_SPACING * cosA));
+
+        float size = Math.min(startSize, Math.min(byDiagonal, Math.min(byWidth, byHeight)));
+        return Math.max(8f, size);
     }
 
     // ==================== HTML ====================
@@ -191,9 +271,10 @@ public final class Watermark {
         }
         String banner = "<div style=\"position:fixed;top:50%;left:50%;z-index:99999;"
                 + "transform:translate(-50%,-50%) rotate(-30deg);"
-                + "color:rgba(196,43,28,0.2);font:bold 48px sans-serif;"
+                + "color:rgba(196,43,28,0.2);font:bold 6vmin sans-serif;"
+                + "text-align:center;line-height:1.2;max-width:90vw;overflow:hidden;"
                 + "white-space:nowrap;pointer-events:none;\">"
-                + escapeHtml(text) + "</div>";
+                + escapeHtml(text).replace("\n", "<br/>") + "</div>";
 
         String lower = html.toLowerCase();
         int bodyClose = lower.lastIndexOf("</body>");
