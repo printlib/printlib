@@ -263,13 +263,8 @@ public class PrintSocketClient {
 
     @OnWebSocketError
     public void onError(Session session, Throwable error) {
-        log.error("=== WebSocket Error Occurred ===");
-        log.error("Error from {}: {}", session.getRemoteAddress(), error.getClass().getSimpleName());
-        log.error("Error message: {}", error.getMessage());
-        log.error("Full error details:", error);
-        
         if (error instanceof EOFException || error instanceof ClosedChannelException) {
-            log.info("Ignoring expected connection closure error: {}", error.getClass().getSimpleName());
+            log.debug("Ignoring expected connection closure error from {}: {}", session.getRemoteAddress(), error.getClass().getSimpleName());
             return;
         }
 
@@ -278,6 +273,10 @@ public class PrintSocketClient {
             return;
         }
 
+        log.error("=== WebSocket Error Occurred ===");
+        log.error("Error from {}: {}", session.getRemoteAddress(), error.getClass().getSimpleName());
+        log.error("Error message: {}", error.getMessage());
+        log.error("Full error details:", error);
         log.error("Connection error from {}: {}", session.getRemoteAddress(), error.getClass().getSimpleName(), error);
         trayProvider.displayErrorMessage(error.getMessage());
     }
