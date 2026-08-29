@@ -28,6 +28,7 @@ import org.eclipse.jetty.ee9.websocket.api.annotations.OnWebSocketMessage;
 import org.eclipse.jetty.ee9.websocket.api.annotations.WebSocket;
 import org.eclipse.jetty.ee9.websocket.api.exceptions.CloseException;
 import org.eclipse.jetty.ee9.websocket.api.exceptions.WebSocketException;
+import org.eclipse.jetty.ee9.websocket.api.exceptions.WebSocketTimeoutException;
 import org.eclipse.jetty.server.Server;
 
 import qz.auth.Certificate;
@@ -263,8 +264,13 @@ public class PrintSocketClient {
 
     @OnWebSocketError
     public void onError(Session session, Throwable error) {
-        if (error instanceof EOFException || error instanceof ClosedChannelException) {
-            log.debug("Ignoring expected connection closure error from {}: {}", session.getRemoteAddress(), error.getClass().getSimpleName());
+        if (error instanceof EOFException || error instanceof ClosedChannelException
+                || error instanceof WebSocketTimeoutException) {
+            // Expected lifecycle events: peer closed the channel (EOF/ClosedChannel)
+            // or the server closed a silent connection after the 5-minute idle
+            // timeout (WebSocketTimeoutException, e.g. client machine asleep).
+            // Clients reconnect automatically — no user-facing error needed.
+            log.debug("Ignoring expected connection closure from {}: {}", session.getRemoteAddress(), error.getClass().getSimpleName());
             return;
         }
 
